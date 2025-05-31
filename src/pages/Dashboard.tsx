@@ -253,7 +253,7 @@ export function Dashboard() {
             {user?.role === "admin" && (
               <>
                 <a
-                  href="/admin/users"
+                  href="/app/admin/users"
                   className="flex items-center p-4 border rounded-lg hover:bg-accent transition-colors"
                 >
                   <Users className="h-8 w-8 mr-3 text-primary" />
@@ -265,7 +265,7 @@ export function Dashboard() {
                   </div>
                 </a>
                 <a
-                  href="/admin/services"
+                  href="/app/admin/services"
                   className="flex items-center p-4 border rounded-lg hover:bg-accent transition-colors"
                 >
                   <Wrench className="h-8 w-8 mr-3 text-primary" />

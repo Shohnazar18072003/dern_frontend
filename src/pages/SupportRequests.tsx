@@ -330,7 +330,7 @@ export function SupportRequests() {
                         URGENT
                       </Badge>
                     )}
-                    <Link to={`/support-requests/${request.requestId}`}>
+                    <Link to={`/app/support-requests/${request.requestId}`}>
                       <Button variant="outline" size="sm">
                         View Details
                       </Button>
