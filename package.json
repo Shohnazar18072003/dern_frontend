@@ -11,7 +11,7 @@
     "predeploy": "npm run build && copy build\\index.html build\\404.html",
     "deploy": "gh-pages -d build"
   },
-  "homepage": "https://otabekoff.github.io/dern-frontend",
+  "homepage": "https://Shohnazar18072003.github.io/dern-frontend",
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",
     "@radix-ui/react-accordion": "^1.2.11",
