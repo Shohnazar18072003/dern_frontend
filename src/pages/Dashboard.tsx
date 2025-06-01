@@ -195,7 +195,7 @@ export function Dashboard() {
             {user?.role === "customer" && (
               <>
                 <a
-                  href="/support-requests/new"
+                  href="/app/support-requests/new"
                   className="flex items-center p-4 border rounded-lg hover:bg-accent transition-colors"
                 >
                   <Ticket className="h-8 w-8 mr-3 text-primary" />
@@ -207,7 +207,7 @@ export function Dashboard() {
                   </div>
                 </a>
                 <a
-                  href="/technicians"
+                  href="/app/technicians"
                   className="flex items-center p-4 border rounded-lg hover:bg-accent transition-colors"
                 >
                   <Users className="h-8 w-8 mr-3 text-primary" />

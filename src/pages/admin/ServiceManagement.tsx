@@ -1,7 +1,6 @@
 "use client";
 
 import type React from "react";
-
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,7 +22,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog";
+import { toast } from "sonner";
 import type { Service } from "@/types";
 import api from "@/lib/api";
 import { formatDateTime } from "@/lib/utils";
@@ -36,6 +37,15 @@ import {
   DollarSign,
   Clock,
 } from "lucide-react";
+import type { AxiosResponse } from "axios";
+
+interface ServiceFormData {
+  name: string;
+  description: string;
+  price: number;
+  duration: number;
+  category: string;
+}
 
 export function ServiceManagement() {
   const [services, setServices] = useState<Service[]>([]);
@@ -45,7 +55,10 @@ export function ServiceManagement() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
-  const [formData, setFormData] = useState({
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  const [formData, setFormData] = useState<ServiceFormData>({
     name: "",
     description: "",
     price: 0,
@@ -53,135 +66,8 @@ export function ServiceManagement() {
     category: "",
   });
 
-  const fetchServices = useCallback(async () => {
-    try {
-      const params = new URLSearchParams();
-      if (search) params.append("search", search);
-      if (categoryFilter) params.append("category", categoryFilter);
-
-      const response = await api.get(`/admin/services?${params.toString()}`);
-      setServices(response.data.services || []);
-    } catch (error) {
-      console.error("Failed to fetch services:", error);
-      // Mock data for demo
-      setServices([
-        {
-          _id: "1",
-          name: "Computer Hardware Repair",
-          description:
-            "Comprehensive hardware diagnosis and repair services for desktops and laptops.",
-          price: 75,
-          duration: 120,
-          category: "technical",
-          createdAt: "2024-01-01T10:00:00Z",
-          updatedAt: "2024-01-15T14:30:00Z",
-        },
-        {
-          _id: "2",
-          name: "Software Installation & Setup",
-          description:
-            "Professional software installation, configuration, and setup services.",
-          price: 50,
-          duration: 90,
-          category: "technical",
-          createdAt: "2024-01-01T10:00:00Z",
-          updatedAt: "2024-01-10T16:45:00Z",
-        },
-        {
-          _id: "3",
-          name: "Network Configuration",
-          description:
-            "Complete network setup and configuration services for home and office environments.",
-          price: 100,
-          duration: 150,
-          category: "technical",
-          createdAt: "2024-01-01T10:00:00Z",
-          updatedAt: "2024-01-12T11:20:00Z",
-        },
-        {
-          _id: "4",
-          name: "Cybersecurity Consultation",
-          description:
-            "Expert cybersecurity assessment and consultation services.",
-          price: 125,
-          duration: 180,
-          category: "consultation",
-          createdAt: "2024-01-01T10:00:00Z",
-          updatedAt: "2024-01-18T09:15:00Z",
-        },
-      ]);
-    } finally {
-      setLoading(false);
-    }
-  }, [search, categoryFilter]);
-
-  useEffect(() => {
-    fetchServices();
-  }, [search, categoryFilter, fetchServices]);
-
-  const filteredServices = services.filter((service) => {
-    const matchesSearch =
-      service.name.toLowerCase().includes(search.toLowerCase()) ||
-      service.description.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory =
-      !categoryFilter || service.category === categoryFilter;
-    return matchesSearch && matchesCategory;
-  });
-
-  const handleCreateService = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const response = await api.post("/admin/services", formData);
-      setServices((prev) => [...prev, response.data.service]);
-      setIsCreateDialogOpen(false);
-      resetForm();
-    } catch (error) {
-      console.error("Failed to create service:", error);
-    }
-  };
-
-  const handleUpdateService = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedService) return;
-
-    try {
-      const response = await api.put(
-        `/admin/services/${selectedService._id}`,
-        formData
-      );
-      setServices((prev) =>
-        prev.map((service) =>
-          service._id === selectedService._id ? response.data.service : service
-        )
-      );
-      setIsEditDialogOpen(false);
-      setSelectedService(null);
-      resetForm();
-    } catch (error) {
-      console.error("Failed to update service:", error);
-    }
-  };
-
-  const handleDeleteService = async (serviceId: string) => {
-    if (
-      !confirm(
-        "Are you sure you want to delete this service? This action cannot be undone."
-      )
-    ) {
-      return;
-    }
-
-    try {
-      await api.delete(`/admin/services/${serviceId}`);
-      setServices((prev) =>
-        prev.filter((service) => service._id !== serviceId)
-      );
-    } catch (error) {
-      console.error("Failed to delete service:", error);
-    }
-  };
-
-  const resetForm = () => {
+  // Reset form data
+  const resetForm = useCallback(() => {
     setFormData({
       name: "",
       description: "",
@@ -189,8 +75,196 @@ export function ServiceManagement() {
       duration: 60,
       category: "",
     });
+    setFormErrors({});
+  }, []);
+
+  // Fetch services from API
+  const fetchServices = useCallback(async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (search) params.append("search", search);
+      if (categoryFilter) params.append("category", categoryFilter);
+
+      const response = await api.get(`/services?${params.toString()}`);
+      const serviceData = response.data.services || response.data.data || [];
+      setServices(Array.isArray(serviceData) ? serviceData : []);
+    } catch (error: any) {
+      console.error("Failed to fetch services:", error);
+      toast.error("Failed to fetch services", {
+        description: error.response?.data?.message || "An error occurred",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [search, categoryFilter]);
+
+  useEffect(() => {
+    fetchServices();
+  }, [fetchServices]);
+
+  // Handle form input changes
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const { name, value } = e.target;
+
+      if (name === "price" || name === "duration") {
+        const numValue =
+          name === "price"
+            ? Number.parseFloat(value) || 0
+            : Number.parseInt(value) || 0;
+        setFormData((prev) => ({ ...prev, [name]: numValue }));
+      } else {
+        setFormData((prev) => ({ ...prev, [name]: value }));
+      }
+
+      // Clear error for this field when user types
+      setFormErrors((prev) => {
+        if (prev[name]) {
+          const newErrors = { ...prev };
+          delete newErrors[name];
+          return newErrors;
+        }
+        return prev;
+      });
+    },
+    []
+  );
+
+  // Handle select changes
+  const handleSelectChange = useCallback((value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      category: value === "all" ? "" : value,
+    }));
+
+    // Clear error for category field
+    setFormErrors((prev) => {
+      if (prev.category) {
+        const newErrors = { ...prev };
+        delete newErrors.category;
+        return newErrors;
+      }
+      return prev;
+    });
+  }, []);
+
+  // Validate form data
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+
+    if (!formData.name.trim()) {
+      errors.name = "Service name is required";
+    }
+
+    if (!formData.description.trim()) {
+      errors.description = "Service description is required";
+    }
+
+    if (!formData.price || formData.price <= 0) {
+      errors.price = "Price must be greater than 0";
+    }
+
+    if (!formData.duration || formData.duration < 15) {
+      errors.duration = "Duration must be at least 15 minutes";
+    }
+
+    if (!formData.category) {
+      errors.category = "Category is required";
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
+  // Handle form submission for creating/editing services
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!validateForm()) {
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      // Prepare service data for API
+      const serviceData = {
+        name: formData.name.trim(),
+        description: formData.description.trim(),
+        price: Number(formData.price),
+        duration: Number(formData.duration),
+        category: formData.category,
+      };
+
+      let response: AxiosResponse<any, any>;
+
+      if (selectedService) {
+        // Update existing service
+        response = await api.put(
+          `/services/${selectedService._id}`,
+          serviceData
+        );
+        toast.success("Service updated successfully");
+
+        // Update service in local state
+        const updatedService = response.data.service || response.data;
+        setServices((prev) =>
+          prev.map((service) =>
+            service._id === selectedService._id
+              ? {
+                  ...service,
+                  ...updatedService,
+                  _id: service._id, // Ensure ID is preserved
+                  createdAt: service.createdAt, // Preserve original creation date
+                  updatedAt:
+                    updatedService.updatedAt || new Date().toISOString(),
+                }
+              : service
+          )
+        );
+
+        setIsEditDialogOpen(false);
+      } else {
+        // Create new service
+        response = await api.post("/services", serviceData);
+        toast.success("Service created successfully");
+
+        // Add new service to local state
+        const newService = response.data.service || response.data;
+        const serviceToAdd: Service = {
+          _id: newService._id || newService.id || `temp_${Date.now()}`,
+          name: newService.name || formData.name,
+          description: newService.description || formData.description,
+          price: newService.price || formData.price,
+          duration: newService.duration || formData.duration,
+          category: newService.category || formData.category,
+          createdAt: newService.createdAt || new Date().toISOString(),
+          updatedAt: newService.updatedAt || new Date().toISOString(),
+        };
+
+        setServices((prev) => [...prev, serviceToAdd]);
+        setIsCreateDialogOpen(false);
+      }
+
+      setSelectedService(null);
+      resetForm();
+    } catch (error: any) {
+      console.error("Failed to save service:", error);
+      toast.error(
+        selectedService
+          ? "Failed to update service"
+          : "Failed to create service",
+        {
+          description: error.response?.data?.message || "An error occurred",
+        }
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Open edit dialog and populate form with service data
   const openEditDialog = (service: Service) => {
     setSelectedService(service);
     setFormData({
@@ -203,6 +277,31 @@ export function ServiceManagement() {
     setIsEditDialogOpen(true);
   };
 
+  // Delete service
+  const handleDeleteService = async (serviceId: string) => {
+    if (
+      !confirm(
+        "Are you sure you want to delete this service? This action cannot be undone."
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await api.delete(`/services/${serviceId}`);
+      setServices((prev) =>
+        prev.filter((service) => service._id !== serviceId)
+      );
+      toast.success("Service deleted successfully");
+    } catch (error: any) {
+      console.error("Failed to delete service:", error);
+      toast.error("Failed to delete service", {
+        description: error.response?.data?.message || "An error occurred",
+      });
+    }
+  };
+
+  // Get category color for badge
   const getCategoryColor = (category: string) => {
     switch (category) {
       case "technical":
@@ -216,7 +315,19 @@ export function ServiceManagement() {
     }
   };
 
-  if (loading) {
+  // Filter services based on search and filters
+  const filteredServices = services.filter((service) => {
+    const matchesSearch =
+      !search ||
+      service.name.toLowerCase().includes(search.toLowerCase()) ||
+      service.description.toLowerCase().includes(search.toLowerCase());
+    const matchesCategory =
+      !categoryFilter || service.category === categoryFilter;
+    return matchesSearch && matchesCategory;
+  });
+
+  // Loading state
+  if (loading && services.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -233,7 +344,13 @@ export function ServiceManagement() {
             Manage available services and their pricing
           </p>
         </div>
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        <Dialog
+          open={isCreateDialogOpen}
+          onOpenChange={(open) => {
+            setIsCreateDialogOpen(open);
+            if (!open) resetForm();
+          }}
+        >
           <DialogTrigger asChild>
             <Button>
               <Plus className="h-4 w-4 mr-2" />
@@ -247,109 +364,127 @@ export function ServiceManagement() {
                 Add a new service to the platform
               </DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleCreateService} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Service Name</Label>
+                <Label htmlFor="name">
+                  Service Name <span className="text-destructive">*</span>
+                </Label>
                 <Input
                   id="name"
+                  name="name"
                   value={formData.name}
-                  onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, name: e.target.value }))
-                  }
+                  onChange={handleInputChange}
                   placeholder="Enter service name"
                   required
                 />
+                {formErrors.name && (
+                  <p className="text-sm text-destructive">{formErrors.name}</p>
+                )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
+                <Label htmlFor="description">
+                  Description <span className="text-destructive">*</span>
+                </Label>
                 <Textarea
                   id="description"
+                  name="description"
                   value={formData.description}
-                  onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      description: e.target.value,
-                    }))
-                  }
+                  onChange={handleInputChange}
                   placeholder="Enter service description"
                   rows={3}
                   required
                 />
+                {formErrors.description && (
+                  <p className="text-sm text-destructive">
+                    {formErrors.description}
+                  </p>
+                )}
               </div>
 
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="space-y-2">
-                  <Label htmlFor="price">Price ($)</Label>
+                  <Label htmlFor="price">
+                    Price ($) <span className="text-destructive">*</span>
+                  </Label>
                   <Input
                     id="price"
+                    name="price"
                     type="number"
                     min="0"
                     step="0.01"
                     value={formData.price}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        price: Number.parseFloat(e.target.value),
-                      }))
-                    }
+                    onChange={handleInputChange}
                     required
                   />
+                  {formErrors.price && (
+                    <p className="text-sm text-destructive">
+                      {formErrors.price}
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="duration">Duration (minutes)</Label>
+                  <Label htmlFor="duration">
+                    Duration (minutes){" "}
+                    <span className="text-destructive">*</span>
+                  </Label>
                   <Input
                     id="duration"
+                    name="duration"
                     type="number"
                     min="15"
                     step="15"
                     value={formData.duration}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        duration: Number.parseInt(e.target.value),
-                      }))
-                    }
+                    onChange={handleInputChange}
                     required
                   />
+                  {formErrors.duration && (
+                    <p className="text-sm text-destructive">
+                      {formErrors.duration}
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="category">Category</Label>
+                  <Label htmlFor="category">
+                    Category <span className="text-destructive">*</span>
+                  </Label>
                   <Select
                     value={formData.category || ""}
-                    onValueChange={(value) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        category: value === "all" ? "" : value,
-                      }))
-                    }
+                    onValueChange={handleSelectChange}
                     required
                   >
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Categories</SelectItem>
                       <SelectItem value="technical">Technical</SelectItem>
                       <SelectItem value="consultation">Consultation</SelectItem>
                       <SelectItem value="legal">Legal</SelectItem>
                     </SelectContent>
                   </Select>
+                  {formErrors.category && (
+                    <p className="text-sm text-destructive">
+                      {formErrors.category}
+                    </p>
+                  )}
                 </div>
               </div>
 
-              <div className="flex justify-end space-x-2">
+              <DialogFooter>
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => setIsCreateDialogOpen(false)}
+                  disabled={isSubmitting}
                 >
                   Cancel
                 </Button>
-                <Button type="submit">Create Service</Button>
-              </div>
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? "Creating..." : "Create Service"}
+                </Button>
+              </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
@@ -527,13 +662,23 @@ export function ServiceManagement() {
                       <div>
                         <span className="text-muted-foreground">Created:</span>
                         <p className="font-medium">
-                          {formatDateTime(service.createdAt)}
+                          {service.createdAt
+                            ? typeof service.createdAt === "string" &&
+                              service.createdAt.trim() !== ""
+                              ? formatDateTime(service.createdAt)
+                              : "N/A"
+                            : "N/A"}
                         </p>
                       </div>
                       <div>
                         <span className="text-muted-foreground">Updated:</span>
                         <p className="font-medium">
-                          {formatDateTime(service.updatedAt)}
+                          {service.updatedAt
+                            ? typeof service.updatedAt === "string" &&
+                              service.updatedAt.trim() !== ""
+                              ? formatDateTime(service.updatedAt)
+                              : "N/A"
+                            : "N/A"}
                         </p>
                       </div>
                     </div>
@@ -565,115 +710,139 @@ export function ServiceManagement() {
       </div>
 
       {/* Edit Service Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+      <Dialog
+        open={isEditDialogOpen}
+        onOpenChange={(open) => {
+          setIsEditDialogOpen(open);
+          if (!open) {
+            setSelectedService(null);
+            resetForm();
+          }
+        }}
+      >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit Service</DialogTitle>
             <DialogDescription>Update service information</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleUpdateService} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="edit-name">Service Name</Label>
+              <Label htmlFor="edit-name">
+                Service Name <span className="text-destructive">*</span>
+              </Label>
               <Input
                 id="edit-name"
+                name="name"
                 value={formData.name}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, name: e.target.value }))
-                }
+                onChange={handleInputChange}
                 placeholder="Enter service name"
                 required
               />
+              {formErrors.name && (
+                <p className="text-sm text-destructive">{formErrors.name}</p>
+              )}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="edit-description">Description</Label>
+              <Label htmlFor="edit-description">
+                Description <span className="text-destructive">*</span>
+              </Label>
               <Textarea
                 id="edit-description"
+                name="description"
                 value={formData.description}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    description: e.target.value,
-                  }))
-                }
+                onChange={handleInputChange}
                 placeholder="Enter service description"
                 rows={3}
                 required
               />
+              {formErrors.description && (
+                <p className="text-sm text-destructive">
+                  {formErrors.description}
+                </p>
+              )}
             </div>
 
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
-                <Label htmlFor="edit-price">Price ($)</Label>
+                <Label htmlFor="edit-price">
+                  Price ($) <span className="text-destructive">*</span>
+                </Label>
                 <Input
                   id="edit-price"
+                  name="price"
                   type="number"
                   min="0"
                   step="0.01"
                   value={formData.price}
-                  onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      price: Number.parseFloat(e.target.value),
-                    }))
-                  }
+                  onChange={handleInputChange}
                   required
                 />
+                {formErrors.price && (
+                  <p className="text-sm text-destructive">{formErrors.price}</p>
+                )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="edit-duration">Duration (minutes)</Label>
+                <Label htmlFor="edit-duration">
+                  Duration (minutes) <span className="text-destructive">*</span>
+                </Label>
                 <Input
                   id="edit-duration"
+                  name="duration"
                   type="number"
                   min="15"
                   step="15"
                   value={formData.duration}
-                  onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      duration: Number.parseInt(e.target.value),
-                    }))
-                  }
+                  onChange={handleInputChange}
                   required
                 />
+                {formErrors.duration && (
+                  <p className="text-sm text-destructive">
+                    {formErrors.duration}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="edit-category">Category</Label>
+                <Label htmlFor="edit-category">
+                  Category <span className="text-destructive">*</span>
+                </Label>
                 <Select
-                  value={formData.category || "all"}
-                  onValueChange={(value) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      category: value === "all" ? "" : value,
-                    }))
-                  }
+                  value={formData.category || ""}
+                  onValueChange={handleSelectChange}
                   required
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
                     <SelectItem value="technical">Technical</SelectItem>
                     <SelectItem value="consultation">Consultation</SelectItem>
                     <SelectItem value="legal">Legal</SelectItem>
                   </SelectContent>
                 </Select>
+                {formErrors.category && (
+                  <p className="text-sm text-destructive">
+                    {formErrors.category}
+                  </p>
+                )}
               </div>
             </div>
 
-            <div className="flex justify-end space-x-2">
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setIsEditDialogOpen(false)}
+                disabled={isSubmitting}
               >
                 Cancel
               </Button>
-              <Button type="submit">Update Service</Button>
-            </div>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Saving..." : "Save Changes"}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

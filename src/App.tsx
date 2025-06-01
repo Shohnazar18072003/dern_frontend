@@ -34,6 +34,8 @@ import { ForgotPassword } from "@/pages/ForgotPassword";
 import { Unauthorized } from "@/pages/Unauthorized";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Landing } from "@/pages/Landing";
+import { AccountActivation } from "@/pages/AccountActivation";
+import { EditAppointment } from "./pages/EditAppointment";
 
 function App() {
   return (
@@ -53,6 +55,7 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/activate/:token" element={<AccountActivation />} />
             <Route path="/unauthorized" element={<Unauthorized />} />
 
             {/* Protected routes */}
@@ -89,6 +92,10 @@ function App() {
               {/* Appointments */}
               <Route path="appointments" element={<Appointments />} />
               <Route path="appointments/new" element={<CreateAppointment />} />
+              <Route
+                path="/app/appointments/edit/:appointmentId"
+                element={<EditAppointment />}
+              />
 
               {/* Services */}
               <Route path="services" element={<Services />} />

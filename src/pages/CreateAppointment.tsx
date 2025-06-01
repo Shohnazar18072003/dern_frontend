@@ -1,22 +1,19 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import type React from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
-  SelectGroup,
+  SelectContent,
+  SelectItem,
   SelectTrigger,
   SelectValue,
-  SelectContent,
-  SelectLabel,
-  SelectItem,
-  SelectSeparator,
-  SelectScrollUpButton,
-  SelectScrollDownButton,
 } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -26,98 +23,148 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import type { Technician } from "@/types";
 import api from "@/lib/api";
-import { ArrowLeft, CalendarIcon, Clock, User } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+import type { Technician } from "@/types";
+import { toast } from "sonner";
 
 export function CreateAppointment() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const technicianId = searchParams.get("technician");
-
+  const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [technicians, setTechnicians] = useState<Technician[]>([]);
-  const [selectedTechnician, setSelectedTechnician] =
-    useState<Technician | null>(null);
-  const [selectedDate, setSelectedDate] = useState<Date>();
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>();
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
 
   const [formData, setFormData] = useState({
-    technicianId: technicianId || "",
-    date: "",
-    time: "",
+    technicianId: "",
+    startTime: "",
     duration: 60,
     notes: "",
     serviceType: "",
+    priority: "medium",
+    location: {
+      address: "",
+      city: "",
+      state: "",
+      zipCode: "",
+    },
   });
 
-  useEffect(() => {
-    fetchTechnicians();
-  }, []);
+  // Get technician ID from URL query parameter
+  const preselectedTechnicianId = searchParams.get("technician");
 
+  // Check if user is authenticated and has proper role
   useEffect(() => {
-    if (technicianId) {
-      const technician = technicians.find((t) => t.id === technicianId);
-      if (technician) {
-        setSelectedTechnician(technician);
-        setFormData((prev) => ({ ...prev, technicianId }));
-      }
+    if (!authLoading && !user) {
+      toast.error("Authentication required", {
+        description: "Please log in to book an appointment.",
+        duration: 5000,
+      });
+      navigate("/auth/login");
+      return;
     }
-  }, [technicianId, technicians]);
 
-  const fetchAvailableSlots = React.useCallback(async () => {
+    if (!authLoading && user && !["customer", "admin"].includes(user.role)) {
+      toast.error("Access denied", {
+        description: "You don't have permission to book appointments.",
+        duration: 5000,
+      });
+      navigate("/app/dashboard");
+      return;
+    }
+  }, [user, authLoading, navigate]);
+
+  const fetchTechnicians = useCallback(async () => {
+    if (!user) return;
+
     try {
-      const dateStr = selectedDate?.toISOString().split("T")[0];
+      const response = await api.get("/technicians");
+      console.log("Technicians API response:", response.data);
+
+      // Handle different response structures
+      const techniciansList =
+        response.data.data?.technicians || response.data.technicians || [];
+      setTechnicians(techniciansList);
+
+      // Pre-select technician from URL if available
+      if (preselectedTechnicianId) {
+        const foundTechnician = techniciansList.find(
+          (tech: any) => (tech.id || tech._id) === preselectedTechnicianId
+        );
+
+        if (foundTechnician) {
+          setFormData((prev) => ({
+            ...prev,
+            technicianId: preselectedTechnicianId,
+          }));
+        } else {
+          toast.warning("Technician not found", {
+            description: "The specified technician could not be found.",
+            duration: 5000,
+          });
+        }
+      }
+    } catch (error: any) {
+      console.error("Failed to fetch technicians:", error);
+      const message =
+        error.response?.data?.message || "Failed to fetch technicians";
+      setError(message);
+      toast.error("Error", {
+        description: message,
+        duration: 5000,
+      });
+    }
+  }, [preselectedTechnicianId, user]);
+
+  const fetchAvailableSlots = useCallback(async () => {
+    if (!selectedDate || !formData.technicianId) {
+      setAvailableSlots([]);
+      return;
+    }
+
+    try {
+      const dateStr = selectedDate.toISOString().split("T")[0];
       const response = await api.get(
-        `/technicians/${selectedTechnician?.id}/availability?date=${dateStr}`
+        `/technicians/${formData.technicianId}/availability?date=${dateStr}`
       );
-      setAvailableSlots(response.data.slots || []);
-    } catch (error) {
+
+      const slots =
+        response.data.data?.availableSlots || response.data.slots || [];
+      setAvailableSlots(slots);
+      setError("");
+
+      // Reset selected time if it's no longer available
+      if (formData.startTime && !slots.includes(formData.startTime)) {
+        setFormData((prev) => ({ ...prev, startTime: "" }));
+      }
+    } catch (error: any) {
       console.error("Failed to fetch available slots:", error);
-      // Mock available slots for demo
+      const message =
+        error.response?.data?.message || "Unable to fetch available time slots";
+      setError(message);
+      toast.warning("Warning", {
+        description: message,
+        duration: 5000,
+      });
+      // Provide fallback slots
       setAvailableSlots(["09:00", "10:00", "11:00", "14:00", "15:00", "16:00"]);
     }
-  }, [selectedDate, selectedTechnician]);
+  }, [selectedDate, formData.technicianId, formData.startTime]);
 
   useEffect(() => {
-    if (selectedDate && selectedTechnician) {
+    if (user) {
+      fetchTechnicians();
+    }
+  }, [fetchTechnicians, user]);
+
+  useEffect(() => {
+    if (selectedDate && formData.technicianId) {
       fetchAvailableSlots();
     }
-  }, [fetchAvailableSlots, selectedDate, selectedTechnician]);
-
-  const fetchTechnicians = async () => {
-    try {
-      const response = await api.get("/technicians?availability=available");
-      setTechnicians(response.data.technicians || []);
-    } catch (error) {
-      console.error("Failed to fetch technicians:", error);
-      // Mock data for demo
-      setTechnicians([
-        {
-          id: "1",
-          _id: "1",
-          username: "Mike Johnson",
-          email: "mike@example.com",
-          role: "technician",
-          accountType: "individual",
-          phone: "+1234567891",
-          address: "456 Tech Ave",
-          isActive: true,
-          createdAt: "2024-01-01",
-          updatedAt: "2024-01-01",
-          specialization: ["Hardware", "Software"],
-          experience: 5,
-          hourlyRate: 75,
-          availability: "available",
-          rating: 4.8,
-          totalReviews: 124,
-          certifications: ["CompTIA A+", "Microsoft Certified"],
-        },
-      ]);
-    }
-  };
+  }, [selectedDate, formData.technicianId, fetchAvailableSlots]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -125,396 +172,415 @@ export function CreateAppointment() {
     setError("");
 
     try {
+      if (
+        !selectedDate ||
+        !formData.startTime ||
+        !formData.technicianId ||
+        !formData.serviceType
+      ) {
+        throw new Error("Please fill in all required fields.");
+      }
+
+      // Create start and end times
+      const startDateTime = new Date(
+        `${selectedDate.toISOString().split("T")[0]}T${formData.startTime}:00Z`
+      );
+      const endDateTime = new Date(
+        startDateTime.getTime() + formData.duration * 60000
+      );
+
       const appointmentData = {
         technicianId: formData.technicianId,
-        startTime: new Date(
-          `${formData.date}T${formData.time}:00`
-        ).toISOString(),
-        endTime: new Date(
-          new Date(`${formData.date}T${formData.time}:00`).getTime() +
-            formData.duration * 60000
-        ).toISOString(),
+        startTime: startDateTime.toISOString(),
+        endTime: endDateTime.toISOString(),
         notes: formData.notes,
         serviceType: formData.serviceType,
+        priority: formData.priority,
+        estimatedDuration: formData.duration,
+        location: formData.location.address ? formData.location : undefined,
       };
 
-      await api.post("/appointments", appointmentData);
+      const response = await api.post("/appointments", appointmentData);
+
+      toast.success("Success", {
+        description: "Appointment booked successfully!",
+        duration: 5000,
+      });
+
       navigate("/app/appointments");
-    } catch (error: any) {
-      setError(error.response?.data?.message || "Failed to create appointment");
+    } catch (err: any) {
+      const message =
+        err.response?.data?.message ||
+        err.message ||
+        "Failed to book appointment";
+      setError(message);
+      toast.error("Error", {
+        description: message,
+        duration: 5000,
+      });
+      console.error("Book appointment error:", err);
     } finally {
       setLoading(false);
     }
   };
 
   const handleChange = (
-    e: React.ChangeEvent<
-      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-    >
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    if (name.startsWith("location.")) {
+      const locationField = name.split(".")[1];
+      setFormData((prev) => ({
+        ...prev,
+        location: { ...prev.location, [locationField]: value },
+      }));
+    } else {
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    }
   };
 
-  const handleTechnicianSelect = (technicianId: string) => {
-    const technician = technicians.find((t) => t.id === technicianId);
-    setSelectedTechnician(technician || null);
-    setFormData((prev) => ({ ...prev, technicianId }));
-    setSelectedDate(undefined);
-    setAvailableSlots([]);
+  const handleSelectChange = (name: string, value: string) => {
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleDateSelect = (date: Date | undefined) => {
     setSelectedDate(date);
-    if (date) {
-      setFormData((prev) => ({
-        ...prev,
-        date: date.toISOString().split("T")[0],
-      }));
-    }
+    setFormData((prev) => ({ ...prev, startTime: "" })); // Reset time when date changes
   };
+
+  // Check if form is valid for submission
+  const isFormValid = () => {
+    return !!(
+      formData.technicianId &&
+      selectedDate &&
+      formData.startTime &&
+      formData.serviceType &&
+      availableSlots.includes(formData.startTime)
+    );
+  };
+
+  // Helper function to get technician display name with hourly rate
+  const getTechnicianDisplayName = (tech: any) => {
+    // Get the technician name
+    const name =
+      tech.name ||
+      tech.username ||
+      tech.firstName ||
+      tech.fullName ||
+      `Technician ${tech._id?.slice(-4)}`;
+
+    // Get the hourly rate
+    const hourlyRate = tech.hourlyRate || tech.rate || tech.price || tech.cost;
+
+    if (hourlyRate) {
+      return `${name} - $${hourlyRate}/hour`;
+    }
+
+    return name;
+  };
+
+  // Get selected technician info for display
+  const selectedTechnician = technicians.find(
+    (tech) => (tech.id || tech._id) === formData.technicianId
+  );
+
+  // Show loading while checking authentication
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  // Don't render if user is not authenticated or doesn't have proper role
+  if (!user || !["customer", "admin"].includes(user.role)) {
+    return null;
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate("/app/appointments")}
+        >
           <ArrowLeft className="h-4 w-4 mr-2" />
-          Back
+          Back to Appointments
         </Button>
-        <div>
-          <h1 className="text-3xl font-bold">Book Appointment</h1>
-          <p className="text-muted-foreground">
-            Schedule a session with one of our expert technicians
-          </p>
-        </div>
+        <h1 className="text-3xl font-bold">Book New Appointment</h1>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Appointment Form */}
-        <div className="lg:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Appointment Details</CardTitle>
-              <CardDescription>
-                Fill in the details for your appointment
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-6">
-                {error && (
-                  <div className="p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
-                    {error}
-                  </div>
-                )}
+      {preselectedTechnicianId && selectedTechnician && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardContent className="pt-6">
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+              <p className="text-sm text-blue-700">
+                <strong>Pre-selected technician:</strong>{" "}
+                {getTechnicianDisplayName(selectedTechnician)}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-                {/* Technician Selection */}
-                <div className="space-y-2">
-                  <Label htmlFor="technicianId">Select Technician *</Label>
-                  <Select
-                    value={formData.technicianId || "all"}
-                    defaultValue="all"
-                    onValueChange={(value) =>
-                      handleTechnicianSelect(value === "all" ? "" : value)
-                    }
-                    required
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose a technician" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Choose a technician</SelectItem>
-                      {technicians.map((technician) => (
-                        <SelectItem key={technician.id} value={technician.id}>
-                          {technician.username} - ${technician.hourlyRate}/hr
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Appointment Details</CardTitle>
+          <CardDescription>
+            {preselectedTechnicianId
+              ? "Complete the details below to book your appointment with the selected technician"
+              : "Fill in the details below to book your appointment"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {error && (
+              <div className="p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
+                {error}
+              </div>
+            )}
 
-                {/* Service Type */}
-                <div className="space-y-2">
-                  <Label htmlFor="serviceType">Service Type *</Label>
-                  <Select
-                    name="serviceType"
-                    value={formData.serviceType || "all"}
-                    defaultValue="all"
-                    onValueChange={(value) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        serviceType: value === "all" ? "" : value,
-                      }))
-                    }
-                    required
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select service type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Select service type</SelectItem>
-                      <SelectItem value="consultation">Consultation</SelectItem>
-                      <SelectItem value="repair">Repair</SelectItem>
-                      <SelectItem value="installation">Installation</SelectItem>
-                      <SelectItem value="maintenance">Maintenance</SelectItem>
-                      <SelectItem value="troubleshooting">
-                        Troubleshooting
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Date Selection */}
-                {selectedTechnician && (
-                  <div className="space-y-2">
-                    <Label>Select Date *</Label>
-                    <Calendar
-                      mode="single"
-                      selected={selectedDate}
-                      onSelect={handleDateSelect}
-                      disabled={(date) =>
-                        date < new Date() ||
-                        date.getDay() === 0 ||
-                        date.getDay() === 6
-                      }
-                      className="rounded-md border"
-                    />
-                  </div>
-                )}
-
-                {/* Time Selection */}
-                {selectedDate && availableSlots.length > 0 && (
-                  <div className="space-y-2">
-                    <Label htmlFor="time">Select Time *</Label>
-                    <Select
-                      name="time"
-                      value={formData.time || "all"}
-                      defaultValue="all"
-                      onValueChange={(value) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          time: value === "all" ? "" : value,
-                        }))
-                      }
-                      required
+            <div className="space-y-2">
+              <Label htmlFor="technicianId">Select Technician *</Label>
+              <Select
+                name="technicianId"
+                value={formData.technicianId}
+                onValueChange={(value) =>
+                  handleSelectChange("technicianId", value)
+                }
+                required
+                disabled={!!preselectedTechnicianId} // Disable if pre-selected
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a technician" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" disabled>
+                    Choose a technician
+                  </SelectItem>
+                  {technicians.map((tech) => (
+                    <SelectItem
+                      key={tech.id || tech._id}
+                      value={tech.id || tech._id}
                     >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Choose a time slot" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Choose a time slot</SelectItem>
-                        {availableSlots.map((slot) => (
-                          <SelectItem key={slot} value={slot}>
-                            {slot}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
-                {/* Duration */}
-                <div className="space-y-2">
-                  <Label htmlFor="duration">Duration (minutes) *</Label>
-                  <Select
-                    name="duration"
-                    value={
-                      formData.duration ? formData.duration.toString() : "30"
-                    }
-                    defaultValue="30"
-                    onValueChange={(value) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        duration: parseInt(value) || 30,
-                      }))
-                    }
-                    required
+                      {getTechnicianDisplayName(tech)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {preselectedTechnicianId && (
+                <p className="text-xs text-muted-foreground">
+                  Technician pre-selected from link.{" "}
+                  <button
+                    type="button"
+                    className="text-blue-600 hover:underline"
+                    onClick={() => {
+                      setFormData((prev) => ({ ...prev, technicianId: "" }));
+                      navigate("/app/appointments/new", { replace: true });
+                    }}
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select duration" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="30">30 minutes (default)</SelectItem>
-                      <SelectItem value="60">1 hour</SelectItem>
-                      <SelectItem value="90">1.5 hours</SelectItem>
-                      <SelectItem value="120">2 hours</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                    Change technician
+                  </button>
+                </p>
+              )}
+            </div>
 
-                {/* Notes */}
+            <div className="space-y-2">
+              <Label>Select Date *</Label>
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={handleDateSelect}
+                disabled={(date) =>
+                  date < new Date(new Date().setHours(0, 0, 0, 0)) ||
+                  date.getDay() === 0 ||
+                  date.getDay() === 6
+                }
+                className="rounded-md border"
+              />
+            </div>
+
+            {selectedDate && formData.technicianId && (
+              <div className="space-y-2">
+                <Label htmlFor="startTime">Select Time *</Label>
+                <Select
+                  name="startTime"
+                  value={formData.startTime}
+                  onValueChange={(value) =>
+                    handleSelectChange("startTime", value)
+                  }
+                  required
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a time slot" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" disabled>
+                      Choose a time slot
+                    </SelectItem>
+                    {availableSlots.map((slot) => (
+                      <SelectItem key={slot} value={slot}>
+                        {slot}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {availableSlots.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    No available time slots for this date
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="duration">Duration (minutes) *</Label>
+              <Select
+                name="duration"
+                value={formData.duration.toString()}
+                onValueChange={(value) => handleSelectChange("duration", value)}
+                required
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select duration" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="30">30 minutes</SelectItem>
+                  <SelectItem value="60">1 hour</SelectItem>
+                  <SelectItem value="90">1.5 hours</SelectItem>
+                  <SelectItem value="120">2 hours</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="serviceType">Service Type *</Label>
+              <Select
+                name="serviceType"
+                value={formData.serviceType}
+                onValueChange={(value) =>
+                  handleSelectChange("serviceType", value)
+                }
+                required
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select service type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" disabled>
+                    Select service type
+                  </SelectItem>
+                  <SelectItem value="consultation">Consultation</SelectItem>
+                  <SelectItem value="repair">Repair</SelectItem>
+                  <SelectItem value="installation">Installation</SelectItem>
+                  <SelectItem value="maintenance">Maintenance</SelectItem>
+                  <SelectItem value="troubleshooting">
+                    Troubleshooting
+                  </SelectItem>
+                  <SelectItem value="emergency">Emergency</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="priority">Priority</Label>
+              <Select
+                name="priority"
+                value={formData.priority}
+                onValueChange={(value) => handleSelectChange("priority", value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="urgent">Urgent</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-4">
+              <Label>Location (Optional)</Label>
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="notes">Notes (optional)</Label>
-                  <Textarea
-                    id="notes"
-                    name="notes"
-                    placeholder="Describe what you need help with..."
-                    value={formData.notes}
+                  <Label htmlFor="location.address">Address</Label>
+                  <Input
+                    id="location.address"
+                    name="location.address"
+                    placeholder="Street address"
+                    value={formData.location.address}
                     onChange={handleChange}
-                    rows={4}
                   />
                 </div>
-
-                <div className="flex space-x-4">
-                  <Button
-                    type="submit"
-                    disabled={
-                      loading ||
-                      !formData.technicianId ||
-                      !formData.date ||
-                      !formData.time
-                    }
-                  >
-                    {loading ? "Booking..." : "Book Appointment"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => navigate(-1)}
-                  >
-                    Cancel
-                  </Button>
+                <div className="space-y-2">
+                  <Label htmlFor="location.city">City</Label>
+                  <Input
+                    id="location.city"
+                    name="location.city"
+                    placeholder="City"
+                    value={formData.location.city}
+                    onChange={handleChange}
+                  />
                 </div>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Sidebar */}
-        <div className="space-y-6">
-          {/* Selected Technician */}
-          {selectedTechnician && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Selected Technician</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center">
-                      <User className="w-6 h-6 text-primary-foreground" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold">
-                        {selectedTechnician.username}
-                      </h3>
-                      <p className="text-sm text-muted-foreground">
-                        {selectedTechnician.email}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Experience:</span>
-                      <span>{selectedTechnician.experience} years</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Rate:</span>
-                      <span>${selectedTechnician.hourlyRate}/hour</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Rating:</span>
-                      <span>{selectedTechnician.rating}/5 ⭐</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <span className="text-sm text-muted-foreground">
-                      Specializations:
-                    </span>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {selectedTechnician.specialization
-                        .slice(0, 3)
-                        .map((spec, index) => (
-                          <Badge
-                            key={index}
-                            variant="secondary"
-                            className="text-xs"
-                          >
-                            {spec}
-                          </Badge>
-                        ))}
-                    </div>
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="location.state">State</Label>
+                  <Input
+                    id="location.state"
+                    name="location.state"
+                    placeholder="State"
+                    value={formData.location.state}
+                    onChange={handleChange}
+                  />
                 </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Appointment Summary */}
-          {formData.technicianId && formData.date && formData.time && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Appointment Summary</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="flex items-center space-x-2">
-                    <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm">
-                      {new Date(formData.date).toLocaleDateString()}
-                    </span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Clock className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm">
-                      {formData.time} ({formData.duration} minutes)
-                    </span>
-                  </div>
-                  {selectedTechnician && (
-                    <div className="flex items-center space-x-2">
-                      <User className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">
-                        {selectedTechnician.username}
-                      </span>
-                    </div>
-                  )}
-                  {formData.serviceType && (
-                    <div className="pt-2 border-t">
-                      <span className="text-sm text-muted-foreground">
-                        Service:
-                      </span>
-                      <p className="text-sm font-medium capitalize">
-                        {formData.serviceType}
-                      </p>
-                    </div>
-                  )}
-                  {selectedTechnician && (
-                    <div className="pt-2 border-t">
-                      <span className="text-sm text-muted-foreground">
-                        Estimated Cost:
-                      </span>
-                      <p className="text-lg font-bold">
-                        $
-                        {(
-                          (selectedTechnician.hourlyRate * formData.duration) /
-                          60
-                        ).toFixed(2)}
-                      </p>
-                    </div>
-                  )}
+                <div className="space-y-2">
+                  <Label htmlFor="location.zipCode">ZIP Code</Label>
+                  <Input
+                    id="location.zipCode"
+                    name="location.zipCode"
+                    placeholder="ZIP Code"
+                    value={formData.location.zipCode}
+                    onChange={handleChange}
+                  />
                 </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Booking Guidelines */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Booking Guidelines</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2 text-sm text-muted-foreground">
-                <p>• Appointments can be booked up to 30 days in advance</p>
-                <p>• Minimum booking duration is 30 minutes</p>
-                <p>• Cancellations must be made at least 24 hours in advance</p>
-                <p>• You will receive a confirmation email after booking</p>
-                <p>• Payment is processed after the appointment</p>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="notes">Notes (optional)</Label>
+              <Textarea
+                id="notes"
+                name="notes"
+                placeholder="Describe what you need help with..."
+                value={formData.notes}
+                onChange={handleChange}
+                rows={4}
+              />
+            </div>
+
+            <div className="flex space-x-4">
+              <Button
+                type="submit"
+                disabled={loading || !isFormValid()}
+                className="flex-1"
+              >
+                {loading ? "Booking..." : "Book Appointment"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => navigate("/app/appointments")}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

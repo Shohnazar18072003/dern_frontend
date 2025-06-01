@@ -1,29 +1,28 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import {
   Select,
-  SelectGroup,
   SelectTrigger,
   SelectValue,
   SelectContent,
-  SelectLabel,
   SelectItem,
-  SelectSeparator,
-  SelectScrollUpButton,
-  SelectScrollDownButton,
 } from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import type { Appointment } from "@/types";
 import api from "@/lib/api";
@@ -38,13 +37,20 @@ import {
   XCircle,
   Edit,
 } from "lucide-react";
+import { toast } from "sonner";
 
 export function Appointments() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [appointmentToCancel, setAppointmentToCancel] = useState<string | null>(
+    null
+  );
+  const [cancellationReason, setCancellationReason] = useState("");
 
   const fetchAppointments = useCallback(async () => {
     try {
@@ -52,83 +58,32 @@ export function Appointments() {
       if (search) params.append("search", search);
       if (statusFilter) params.append("status", statusFilter);
 
+      console.log("Fetching appointments with params:", params.toString());
       const response = await api.get(`/appointments?${params.toString()}`);
-      setAppointments(response.data.appointments || []);
+      console.log("API Response:", response.data);
+
+      // Fix: Check for the correct response structure
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.appointments
+      ) {
+        setAppointments(response.data.data.appointments);
+      } else if (response.data && Array.isArray(response.data)) {
+        setAppointments(response.data);
+      } else {
+        console.error("Unexpected API response structure:", response.data);
+        setAppointments([]);
+        toast.error("Error loading appointments", {
+          description: "Unexpected data format from server",
+        });
+      }
     } catch (error) {
       console.error("Failed to fetch appointments:", error);
-      // Mock data for demo
-      setAppointments([
-        {
-          _id: "1",
-          client: {
-            _id: "1",
-            id: "1",
-            username: "John Smith",
-            email: "john@example.com",
-            role: "customer",
-            accountType: "individual",
-            phone: "+1234567890",
-            address: "123 Main St",
-            isActive: true,
-            createdAt: "2024-01-01",
-            updatedAt: "2024-01-01",
-          },
-          technician: {
-            _id: "2",
-            id: "2",
-            username: "Mike Johnson",
-            email: "mike@example.com",
-            role: "technician",
-            accountType: "individual",
-            phone: "+1234567891",
-            address: "456 Tech Ave",
-            isActive: true,
-            createdAt: "2024-01-01",
-            updatedAt: "2024-01-01",
-          },
-          startTime: "2024-01-25T10:00:00Z",
-          endTime: "2024-01-25T11:00:00Z",
-          status: "scheduled",
-          notes: "Computer hardware repair consultation",
-          createdAt: "2024-01-20T10:00:00Z",
-          updatedAt: "2024-01-20T10:00:00Z",
-        },
-        {
-          _id: "2",
-          client: {
-            _id: "3",
-            id: "3",
-            username: "Sarah Wilson",
-            email: "sarah@example.com",
-            role: "customer",
-            accountType: "business",
-            phone: "+1234567892",
-            address: "789 Business Blvd",
-            isActive: true,
-            createdAt: "2024-01-01",
-            updatedAt: "2024-01-01",
-          },
-          technician: {
-            _id: "2",
-            id: "2",
-            username: "Mike Johnson",
-            email: "mike@example.com",
-            role: "technician",
-            accountType: "individual",
-            phone: "+1234567891",
-            address: "456 Tech Ave",
-            isActive: true,
-            createdAt: "2024-01-01",
-            updatedAt: "2024-01-01",
-          },
-          startTime: "2024-01-23T14:00:00Z",
-          endTime: "2024-01-23T15:30:00Z",
-          status: "completed",
-          notes: "Network setup and configuration",
-          createdAt: "2024-01-18T10:00:00Z",
-          updatedAt: "2024-01-23T15:30:00Z",
-        },
-      ]);
+      toast.error("Failed to load appointments", {
+        description: "Please try again later",
+      });
+      setAppointments([]);
     } finally {
       setLoading(false);
     }
@@ -136,18 +91,66 @@ export function Appointments() {
 
   useEffect(() => {
     fetchAppointments();
-  }, [fetchAppointments, search, statusFilter]);
+  }, [fetchAppointments]);
+
+  const handleCancel = async () => {
+    if (!appointmentToCancel) return;
+    setLoading(true);
+    try {
+      // Use the new PATCH endpoint with cancellation reason
+      await api.patch(`/appointments/${appointmentToCancel}/cancel`, {
+        cancellationReason: cancellationReason || "No reason provided",
+      });
+      setCancelDialogOpen(false);
+      setAppointmentToCancel(null);
+      setCancellationReason("");
+      toast.success("Appointment canceled successfully");
+      await fetchAppointments(); // Refresh the list
+    } catch (error) {
+      console.error("Failed to cancel appointment:", error);
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        typeof (error as any).response === "object" &&
+        (error as any).response !== null &&
+        "data" in (error as any).response &&
+        typeof (error as any).response.data === "object" &&
+        (error as any).response.data !== null &&
+        "message" in (error as any).response.data
+      ) {
+        toast.error("Error", {
+          description: (error as any).response.data.message,
+        });
+      } else {
+        toast.error("Failed to cancel appointment");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openCancelDialog = (appointmentId: string) => {
+    setAppointmentToCancel(appointmentId);
+    setCancellationReason("");
+    setCancelDialogOpen(true);
+  };
 
   const filteredAppointments = appointments.filter((appointment) => {
+    // Safety check for undefined properties
+    if (!appointment || !appointment.client || !appointment.technician) {
+      return false;
+    }
+
     const matchesSearch =
-      appointment.client.username
+      (appointment.client.username || "")
         .toLowerCase()
         .includes(search.toLowerCase()) ||
-      appointment.technician.username
+      (appointment.technician.username || "")
         .toLowerCase()
         .includes(search.toLowerCase()) ||
-      (appointment.notes &&
-        appointment.notes.toLowerCase().includes(search.toLowerCase()));
+      (appointment.notes || "").toLowerCase().includes(search.toLowerCase());
+
     const matchesStatus = !statusFilter || appointment.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -160,6 +163,8 @@ export function Appointments() {
         return "bg-green-500/10 text-green-500 border-green-500/20";
       case "canceled":
         return "bg-red-500/10 text-red-500 border-red-500/20";
+      case "in-progress":
+        return "bg-amber-500/10 text-amber-500 border-amber-500/20";
       default:
         return "bg-gray-500/10 text-gray-500 border-gray-500/20";
     }
@@ -173,6 +178,8 @@ export function Appointments() {
         return <CheckCircle className="h-4 w-4" />;
       case "canceled":
         return <XCircle className="h-4 w-4" />;
+      case "in-progress":
+        return <Clock className="h-4 w-4" />;
       default:
         return <Clock className="h-4 w-4" />;
     }
@@ -229,7 +236,6 @@ export function Appointments() {
               <label className="text-sm font-medium">Status</label>
               <Select
                 value={statusFilter || "all"}
-                defaultValue="all"
                 onValueChange={(value) =>
                   setStatusFilter(value === "all" ? "" : value)
                 }
@@ -240,6 +246,7 @@ export function Appointments() {
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="scheduled">Scheduled</SelectItem>
+                  <SelectItem value="in-progress">In Progress</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
                   <SelectItem value="canceled">Canceled</SelectItem>
                 </SelectContent>
@@ -320,7 +327,7 @@ export function Appointments() {
                             <span className="text-muted-foreground">
                               Client:
                             </span>{" "}
-                            {appointment.client.username}
+                            {appointment.client?.username || "Unknown"}
                           </span>
                         </div>
                         <div className="flex items-center space-x-2">
@@ -329,7 +336,7 @@ export function Appointments() {
                             <span className="text-muted-foreground">
                               Technician:
                             </span>{" "}
-                            {appointment.technician.username}
+                            {appointment.technician?.username || "Unknown"}
                           </span>
                         </div>
                       </div>
@@ -360,6 +367,16 @@ export function Appointments() {
                       </div>
                     </div>
 
+                    {appointment.serviceType && (
+                      <div className="mt-3">
+                        <span className="text-sm text-muted-foreground">
+                          Service Type:
+                        </span>
+                        <p className="text-sm mt-1 capitalize">
+                          {appointment.serviceType}
+                        </p>
+                      </div>
+                    )}
                     {appointment.notes && (
                       <div className="mt-3">
                         <span className="text-sm text-muted-foreground">
@@ -368,16 +385,39 @@ export function Appointments() {
                         <p className="text-sm mt-1">{appointment.notes}</p>
                       </div>
                     )}
+                    {appointment.cancellationReason &&
+                      appointment.status === "canceled" && (
+                        <div className="mt-3">
+                          <span className="text-sm text-muted-foreground">
+                            Cancellation Reason:
+                          </span>
+                          <p className="text-sm mt-1">
+                            {appointment.cancellationReason}
+                          </p>
+                        </div>
+                      )}
                   </div>
 
                   <div className="flex flex-col space-y-2">
                     {appointment.status === "scheduled" && (
                       <>
-                        <Button variant="outline" size="sm">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            navigate(
+                              `/app/appointments/edit/${appointment._id}`
+                            )
+                          }
+                        >
                           <Edit className="h-4 w-4 mr-1" />
                           Edit
                         </Button>
-                        <Button variant="destructive" size="sm">
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => openCancelDialog(appointment._id)}
+                        >
                           Cancel
                         </Button>
                       </>
@@ -395,6 +435,51 @@ export function Appointments() {
           ))
         )}
       </div>
+
+      {/* Cancel Dialog with Reason */}
+      <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancel Appointment</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to cancel this appointment? Please provide a
+              reason for cancellation.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="cancellationReason">
+                Reason for Cancellation (Optional)
+              </Label>
+              <Textarea
+                id="cancellationReason"
+                placeholder="Please explain why you're canceling this appointment..."
+                value={cancellationReason}
+                onChange={(e) => setCancellationReason(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCancelDialogOpen(false);
+                setCancellationReason("");
+              }}
+            >
+              Keep Appointment
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleCancel}
+              disabled={loading}
+            >
+              {loading ? "Canceling..." : "Confirm Cancel"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

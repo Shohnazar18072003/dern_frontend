@@ -10,7 +10,18 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { toast } from "sonner";
 import type { Notification } from "@/types";
 import api from "@/lib/api";
 import { formatDateTime } from "@/lib/utils";
@@ -23,76 +34,79 @@ import {
   Calendar,
   Ticket,
   AlertTriangle,
+  Settings,
+  TestTube,
+  Loader2,
 } from "lucide-react";
+
+interface NotificationSettings {
+  emailNotifications: {
+    enabled: boolean;
+    supportRequests: boolean;
+    appointments: boolean;
+    messages: boolean;
+    systemUpdates: boolean;
+    marketing: boolean;
+  };
+  pushNotifications: {
+    enabled: boolean;
+    supportRequests: boolean;
+    appointments: boolean;
+    messages: boolean;
+  };
+  smsNotifications: {
+    enabled: boolean;
+    phoneNumber: string;
+    urgentOnly: boolean;
+  };
+  inAppNotifications: {
+    enabled: boolean;
+    sound: boolean;
+    desktop: boolean;
+  };
+}
 
 export function Notifications() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "unread" | "read">("all");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState<NotificationSettings | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [testingNotification, setTestingNotification] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     fetchNotifications();
+    fetchNotificationSettings();
   }, []);
 
   const fetchNotifications = async () => {
     try {
+      setLoading(true);
       const response = await api.get("/notifications");
       setNotifications(response.data.notifications || []);
     } catch (error) {
       console.error("Failed to fetch notifications:", error);
-      // Mock data for demo
-      setNotifications([
-        {
-          _id: "1",
-          user: "user1",
-          type: "support_request",
-          content:
-            "Your support request #SR-001 has been assigned to Mike Johnson",
-          isRead: false,
-          createdAt: "2024-01-20T10:30:00Z",
-          updatedAt: "2024-01-20T10:30:00Z",
-        },
-        {
-          _id: "2",
-          user: "user1",
-          type: "appointment",
-          content:
-            "Appointment reminder: You have an appointment with Sarah Wilson tomorrow at 2:00 PM",
-          isRead: false,
-          createdAt: "2024-01-19T15:00:00Z",
-          updatedAt: "2024-01-19T15:00:00Z",
-        },
-        {
-          _id: "3",
-          user: "user1",
-          type: "message",
-          content:
-            "New message from technician regarding your hardware repair request",
-          isRead: true,
-          readAt: "2024-01-19T09:15:00Z",
-          createdAt: "2024-01-19T09:00:00Z",
-          updatedAt: "2024-01-19T09:15:00Z",
-        },
-        {
-          _id: "4",
-          user: "user1",
-          type: "system",
-          content:
-            "Your account has been successfully verified. Welcome to Dern Support!",
-          isRead: true,
-          readAt: "2024-01-18T14:20:00Z",
-          createdAt: "2024-01-18T14:00:00Z",
-          updatedAt: "2024-01-18T14:20:00Z",
-        },
-      ]);
+      toast.error("Failed to load notifications");
     } finally {
       setLoading(false);
     }
   };
 
+  const fetchNotificationSettings = async () => {
+    try {
+      const response = await api.get("/notification-settings");
+      setSettings(response.data.settings);
+    } catch (error) {
+      console.error("Failed to fetch notification settings:", error);
+    }
+  };
+
   const markAsRead = async (notificationId: string) => {
     try {
-      await api.patch(`/notifications/${notificationId}/read`);
+      await api.patch(`/notifications/${notificationId}`);
       setNotifications((prev) =>
         prev.map((notification) =>
           notification._id === notificationId
@@ -104,14 +118,24 @@ export function Notifications() {
             : notification
         )
       );
+      toast.success("Notification marked as read");
     } catch (error) {
       console.error("Failed to mark notification as read:", error);
+      toast.error("Failed to mark notification as read");
     }
   };
 
   const markAllAsRead = async () => {
     try {
-      await api.patch("/notifications/mark-all-read");
+      const unreadNotifications = notifications.filter((n) => !n.isRead);
+
+      // Mark all unread notifications as read
+      await Promise.all(
+        unreadNotifications.map((notification) =>
+          api.patch(`/notifications/${notification._id}`)
+        )
+      );
+
       setNotifications((prev) =>
         prev.map((notification) => ({
           ...notification,
@@ -119,8 +143,10 @@ export function Notifications() {
           readAt: new Date().toISOString(),
         }))
       );
+      toast.success("All notifications marked as read");
     } catch (error) {
       console.error("Failed to mark all notifications as read:", error);
+      toast.error("Failed to mark all notifications as read");
     }
   };
 
@@ -130,8 +156,91 @@ export function Notifications() {
       setNotifications((prev) =>
         prev.filter((notification) => notification._id !== notificationId)
       );
+      toast.success("Notification deleted");
     } catch (error) {
       console.error("Failed to delete notification:", error);
+      toast.error("Failed to delete notification");
+    }
+  };
+
+  const updateNotificationSettings = async (
+    updatedSettings: Partial<NotificationSettings>
+  ) => {
+    try {
+      setSettingsLoading(true);
+      const response = await api.put("/notification-settings", updatedSettings);
+      setSettings(response.data.settings);
+      toast.success("Notification settings updated");
+    } catch (error) {
+      console.error("Failed to update notification settings:", error);
+      toast.error("Failed to update notification settings");
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const testNotification = async (type: "email" | "push") => {
+    try {
+      setTestingNotification(type);
+      await api.post("/notification-settings/test", { type });
+      toast.success(`Test ${type} notification sent`);
+    } catch (error) {
+      console.error(`Failed to send test ${type} notification:`, error);
+      toast.error(`Failed to send test ${type} notification`);
+    } finally {
+      setTestingNotification(null);
+    }
+  };
+
+  const enablePushNotifications = async () => {
+    try {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+        toast.error("Push notifications are not supported in this browser");
+        return;
+      }
+
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        toast.error("Push notification permission denied");
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+      });
+
+      await api.post("/notification-settings/push/subscribe", {
+        endpoint: subscription.endpoint,
+        keys: {
+          p256dh: btoa(
+            String.fromCharCode(
+              ...new Uint8Array(subscription.getKey("p256dh")!)
+            )
+          ),
+          auth: btoa(
+            String.fromCharCode(...new Uint8Array(subscription.getKey("auth")!))
+          ),
+        },
+      });
+
+      await fetchNotificationSettings();
+      toast.success("Push notifications enabled");
+    } catch (error) {
+      console.error("Failed to enable push notifications:", error);
+      toast.error("Failed to enable push notifications");
+    }
+  };
+
+  const disablePushNotifications = async () => {
+    try {
+      await api.post("/notification-settings/push/unsubscribe");
+      await fetchNotificationSettings();
+      toast.success("Push notifications disabled");
+    } catch (error) {
+      console.error("Failed to disable push notifications:", error);
+      toast.error("Failed to disable push notifications");
     }
   };
 
@@ -175,12 +284,406 @@ export function Notifications() {
             Stay updated with your latest activities and messages
           </p>
         </div>
-        {unreadCount > 0 && (
-          <Button onClick={markAllAsRead}>
-            <CheckCheck className="h-4 w-4 mr-2" />
-            Mark all as read
-          </Button>
-        )}
+        <div className="flex items-center space-x-2">
+          {unreadCount > 0 && (
+            <Button onClick={markAllAsRead}>
+              <CheckCheck className="h-4 w-4 mr-2" />
+              Mark all as read
+            </Button>
+          )}
+          <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <Settings className="h-4 w-4 mr-2" />
+                Settings
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Notification Settings</DialogTitle>
+                <DialogDescription>
+                  Manage how you receive notifications
+                </DialogDescription>
+              </DialogHeader>
+
+              {settings && (
+                <div className="space-y-6">
+                  {/* Email Notifications */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">
+                        Email Notifications
+                      </CardTitle>
+                      <CardDescription>
+                        Receive notifications via email
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="email-enabled">
+                          Enable email notifications
+                        </Label>
+                        <Switch
+                          id="email-enabled"
+                          checked={settings.emailNotifications.enabled}
+                          onCheckedChange={(checked) =>
+                            updateNotificationSettings({
+                              emailNotifications: {
+                                ...settings.emailNotifications,
+                                enabled: checked,
+                              },
+                            })
+                          }
+                        />
+                      </div>
+
+                      {settings.emailNotifications.enabled && (
+                        <div className="space-y-3 pl-4 border-l-2 border-muted">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="email-support">
+                              Support requests
+                            </Label>
+                            <Switch
+                              id="email-support"
+                              checked={
+                                settings.emailNotifications.supportRequests
+                              }
+                              onCheckedChange={(checked) =>
+                                updateNotificationSettings({
+                                  emailNotifications: {
+                                    ...settings.emailNotifications,
+                                    supportRequests: checked,
+                                  },
+                                })
+                              }
+                            />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="email-appointments">
+                              Appointments
+                            </Label>
+                            <Switch
+                              id="email-appointments"
+                              checked={settings.emailNotifications.appointments}
+                              onCheckedChange={(checked) =>
+                                updateNotificationSettings({
+                                  emailNotifications: {
+                                    ...settings.emailNotifications,
+                                    appointments: checked,
+                                  },
+                                })
+                              }
+                            />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="email-messages">Messages</Label>
+                            <Switch
+                              id="email-messages"
+                              checked={settings.emailNotifications.messages}
+                              onCheckedChange={(checked) =>
+                                updateNotificationSettings({
+                                  emailNotifications: {
+                                    ...settings.emailNotifications,
+                                    messages: checked,
+                                  },
+                                })
+                              }
+                            />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="email-system">System updates</Label>
+                            <Switch
+                              id="email-system"
+                              checked={
+                                settings.emailNotifications.systemUpdates
+                              }
+                              onCheckedChange={(checked) =>
+                                updateNotificationSettings({
+                                  emailNotifications: {
+                                    ...settings.emailNotifications,
+                                    systemUpdates: checked,
+                                  },
+                                })
+                              }
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => testNotification("email")}
+                          disabled={testingNotification === "email"}
+                        >
+                          {testingNotification === "email" ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <TestTube className="h-4 w-4 mr-2" />
+                          )}
+                          Test Email
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Push Notifications */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">
+                        Push Notifications
+                      </CardTitle>
+                      <CardDescription>
+                        Receive browser push notifications
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="push-enabled">
+                          Enable push notifications
+                        </Label>
+                        <Switch
+                          id="push-enabled"
+                          checked={settings.pushNotifications.enabled}
+                          onCheckedChange={(checked) =>
+                            checked
+                              ? enablePushNotifications()
+                              : disablePushNotifications()
+                          }
+                        />
+                      </div>
+
+                      {settings.pushNotifications.enabled && (
+                        <div className="space-y-3 pl-4 border-l-2 border-muted">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="push-support">
+                              Support requests
+                            </Label>
+                            <Switch
+                              id="push-support"
+                              checked={
+                                settings.pushNotifications.supportRequests
+                              }
+                              onCheckedChange={(checked) =>
+                                updateNotificationSettings({
+                                  pushNotifications: {
+                                    ...settings.pushNotifications,
+                                    supportRequests: checked,
+                                  },
+                                })
+                              }
+                            />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="push-appointments">
+                              Appointments
+                            </Label>
+                            <Switch
+                              id="push-appointments"
+                              checked={settings.pushNotifications.appointments}
+                              onCheckedChange={(checked) =>
+                                updateNotificationSettings({
+                                  pushNotifications: {
+                                    ...settings.pushNotifications,
+                                    appointments: checked,
+                                  },
+                                })
+                              }
+                            />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="push-messages">Messages</Label>
+                            <Switch
+                              id="push-messages"
+                              checked={settings.pushNotifications.messages}
+                              onCheckedChange={(checked) =>
+                                updateNotificationSettings({
+                                  pushNotifications: {
+                                    ...settings.pushNotifications,
+                                    messages: checked,
+                                  },
+                                })
+                              }
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => testNotification("push")}
+                          disabled={
+                            testingNotification === "push" ||
+                            !settings.pushNotifications.enabled
+                          }
+                        >
+                          {testingNotification === "push" ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <TestTube className="h-4 w-4 mr-2" />
+                          )}
+                          Test Push
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* SMS Notifications */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">
+                        SMS Notifications
+                      </CardTitle>
+                      <CardDescription>
+                        Receive urgent notifications via SMS
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="sms-enabled">
+                          Enable SMS notifications
+                        </Label>
+                        <Switch
+                          id="sms-enabled"
+                          checked={settings.smsNotifications.enabled}
+                          onCheckedChange={(checked) =>
+                            updateNotificationSettings({
+                              smsNotifications: {
+                                ...settings.smsNotifications,
+                                enabled: checked,
+                              },
+                            })
+                          }
+                        />
+                      </div>
+
+                      {settings.smsNotifications.enabled && (
+                        <div className="space-y-3 pl-4 border-l-2 border-muted">
+                          <div className="space-y-2">
+                            <Label htmlFor="phone-number">Phone Number</Label>
+                            <Input
+                              id="phone-number"
+                              type="tel"
+                              placeholder="+1 (555) 123-4567"
+                              value={
+                                settings.smsNotifications.phoneNumber || ""
+                              }
+                              onChange={(e) =>
+                                updateNotificationSettings({
+                                  smsNotifications: {
+                                    ...settings.smsNotifications,
+                                    phoneNumber: e.target.value,
+                                  },
+                                })
+                              }
+                            />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="sms-urgent">
+                              Urgent notifications only
+                            </Label>
+                            <Switch
+                              id="sms-urgent"
+                              checked={settings.smsNotifications.urgentOnly}
+                              onCheckedChange={(checked) =>
+                                updateNotificationSettings({
+                                  smsNotifications: {
+                                    ...settings.smsNotifications,
+                                    urgentOnly: checked,
+                                  },
+                                })
+                              }
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                        <p className="text-sm text-yellow-800">
+                          SMS notifications are currently not available. This
+                          feature will be enabled in a future update.
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* In-App Notifications */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">
+                        In-App Notifications
+                      </CardTitle>
+                      <CardDescription>
+                        Control in-app notification behavior
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="inapp-enabled">
+                          Enable in-app notifications
+                        </Label>
+                        <Switch
+                          id="inapp-enabled"
+                          checked={settings.inAppNotifications.enabled}
+                          onCheckedChange={(checked) =>
+                            updateNotificationSettings({
+                              inAppNotifications: {
+                                ...settings.inAppNotifications,
+                                enabled: checked,
+                              },
+                            })
+                          }
+                        />
+                      </div>
+
+                      {settings.inAppNotifications.enabled && (
+                        <div className="space-y-3 pl-4 border-l-2 border-muted">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="inapp-sound">
+                              Sound notifications
+                            </Label>
+                            <Switch
+                              id="inapp-sound"
+                              checked={settings.inAppNotifications.sound}
+                              onCheckedChange={(checked) =>
+                                updateNotificationSettings({
+                                  inAppNotifications: {
+                                    ...settings.inAppNotifications,
+                                    sound: checked,
+                                  },
+                                })
+                              }
+                            />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="inapp-desktop">
+                              Desktop notifications
+                            </Label>
+                            <Switch
+                              id="inapp-desktop"
+                              checked={settings.inAppNotifications.desktop}
+                              onCheckedChange={(checked) =>
+                                updateNotificationSettings({
+                                  inAppNotifications: {
+                                    ...settings.inAppNotifications,
+                                    desktop: checked,
+                                  },
+                                })
+                              }
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Filter Tabs */}
@@ -298,59 +801,6 @@ export function Notifications() {
           ))
         )}
       </div>
-
-      {/* Notification Settings */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Notification Preferences</CardTitle>
-          <CardDescription>
-            Manage how you receive notifications
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="font-medium">Email Notifications</h4>
-                <p className="text-sm text-muted-foreground">
-                  Receive notifications via email
-                </p>
-              </div>
-              <Button variant="outline" size="sm">
-                Configure
-              </Button>
-            </div>
-
-            <Separator />
-
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="font-medium">Push Notifications</h4>
-                <p className="text-sm text-muted-foreground">
-                  Receive browser push notifications
-                </p>
-              </div>
-              <Button variant="outline" size="sm">
-                Enable
-              </Button>
-            </div>
-
-            <Separator />
-
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="font-medium">SMS Notifications</h4>
-                <p className="text-sm text-muted-foreground">
-                  Receive urgent notifications via SMS
-                </p>
-              </div>
-              <Button variant="outline" size="sm">
-                Setup
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

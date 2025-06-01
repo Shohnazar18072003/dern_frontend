@@ -54,7 +54,7 @@ export function CreateSupportRequest() {
       const response = await api.post("/support-requests", requestData);
       const requestId = response.data.request.requestId;
 
-      navigate(`/support-requests/${requestId}`);
+      navigate(`/app/support-requests/${requestId}`);
     } catch (error: any) {
       setError(
         error.response?.data?.message || "Failed to create support request"

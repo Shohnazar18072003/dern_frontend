@@ -45,21 +45,35 @@ export function Profile() {
   });
 
   useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const response = await api.get("/auth/profile");
+        // Assuming useAuth provides a method to update user
+        // Update user in auth context if needed
+        setFormData({
+          username: response.data.user.username || "",
+          phone: response.data.user.phone || "",
+          address: response.data.user.address || "",
+          companyName:
+            response.data.user.accountType === "business"
+              ? response.data.user.companyName || ""
+              : "",
+          specialization: response.data.user.specialization || [],
+          experience: response.data.user.experience || 0,
+          hourlyRate: response.data.user.hourlyRate || 0,
+          availability: response.data.user.availability || "available",
+          certifications: response.data.user.certifications || [],
+        });
+      } catch (error) {
+        console.error("Failed to fetch user:", error);
+      }
+    };
+
     if (user) {
-      setFormData({
-        username: user.username || "",
-        phone: user.phone || "",
-        address: user.address || "",
-        companyName: user.companyName || "",
-        specialization: (user as any).specialization || [],
-        experience: (user as any).experience || 0,
-        hourlyRate: (user as any).hourlyRate || 0,
-        availability: (user as any).availability || "available",
-        certifications: (user as any).certifications || [],
-      });
+      fetchUser();
     }
   }, [user]);
-
+  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -76,6 +90,8 @@ export function Profile() {
       if (user?.accountType === "business") {
         updateData.companyName = formData.companyName;
       }
+
+      console.log("Sending update data:", updateData); // Debug log
 
       await api.put("/auth/profile", updateData);
 
@@ -306,25 +322,25 @@ export function Profile() {
 
                     <div className="space-y-2">
                       <Label htmlFor="availability">Availability</Label>
-                    <Select
+                      <Select
                         name="availability"
                         value={formData.availability || "available"}
                         onValueChange={(value) =>
-                            setFormData((prev) => ({
-                                ...prev,
-                                availability: value,
-                            }))
+                          setFormData((prev) => ({
+                            ...prev,
+                            availability: value,
+                          }))
                         }
-                    >
+                      >
                         <SelectTrigger className="w-full" id="availability">
-                            <SelectValue placeholder="Select availability" />
+                          <SelectValue placeholder="Select availability" />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="available">Available</SelectItem>
-                            <SelectItem value="busy">Busy</SelectItem>
-                            <SelectItem value="offline">Offline</SelectItem>
+                          <SelectItem value="available">Available</SelectItem>
+                          <SelectItem value="busy">Busy</SelectItem>
+                          <SelectItem value="offline">Offline</SelectItem>
                         </SelectContent>
-                    </Select>
+                      </Select>
                     </div>
 
                     <div className="space-y-2">

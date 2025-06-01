@@ -16,7 +16,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import type { SupportRequest, Message } from "@/types";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import type { SupportRequest, Message, Technician } from "@/types";
 import api from "@/lib/api";
 import { formatDateTime } from "@/lib/utils";
 import {
@@ -27,6 +34,9 @@ import {
   CheckCircle,
   AlertTriangle,
   Star,
+  Download,
+  UserPlus,
+  RefreshCw,
 } from "lucide-react";
 
 export function SupportRequestDetails() {
@@ -40,6 +50,13 @@ export function SupportRequestDetails() {
   const [sendingMessage, setSendingMessage] = useState(false);
   const [rating, setRating] = useState(0);
   const [feedback, setFeedback] = useState("");
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [selectedTechnician, setSelectedTechnician] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState("");
+  const [showAssignSection, setShowAssignSection] = useState(false);
+  const [showStatusSection, setShowStatusSection] = useState(false);
+  const [assigningTechnician, setAssigningTechnician] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
 
   const fetchRequest = useCallback(async () => {
     try {
@@ -60,6 +77,15 @@ export function SupportRequestDetails() {
       console.error("Failed to fetch messages:", error);
     }
   }, [id]);
+
+  const fetchTechnicians = async () => {
+    try {
+      const response = await api.get("/technicians");
+      setTechnicians(response.data.technicians);
+    } catch (error) {
+      console.error("Failed to fetch technicians:", error);
+    }
+  };
 
   useEffect(() => {
     if (id) {
@@ -97,6 +123,98 @@ export function SupportRequestDetails() {
     } catch (error) {
       console.error("Failed to submit rating:", error);
     }
+  };
+
+  const handleAssignTechnician = async () => {
+    if (!showAssignSection) {
+      setShowAssignSection(true);
+      await fetchTechnicians();
+      return;
+    }
+
+    if (!selectedTechnician) return;
+
+    setAssigningTechnician(true);
+    try {
+      await api.patch(`/support-requests/${id}/assign`, {
+        technicianId: selectedTechnician,
+      });
+      setSelectedTechnician("");
+      setShowAssignSection(false);
+      fetchRequest();
+    } catch (error) {
+      console.error("Failed to assign technician:", error);
+    } finally {
+      setAssigningTechnician(false);
+    }
+  };
+
+  const handleAssignToMe = async () => {
+    try {
+      await api.post(`/support-requests/${id}/assign`, {
+        technicianId: user?.id,
+      });
+      fetchRequest();
+    } catch (error) {
+      console.error("Failed to assign to self:", error);
+    }
+  };
+
+  const handleUpdateStatus = async () => {
+    if (!showStatusSection) {
+      setShowStatusSection(true);
+      setSelectedStatus(request?.status || "");
+      return;
+    }
+
+    if (!selectedStatus) return;
+
+    setUpdatingStatus(true);
+    try {
+      await api.patch(`/support-requests/${id}/status`, {
+        status: selectedStatus,
+      });
+      setSelectedStatus("");
+      setShowStatusSection(false);
+      fetchRequest();
+    } catch (error) {
+      console.error("Failed to update status:", error);
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
+
+  const handleExportDetails = () => {
+    if (!request) return;
+
+    const exportData = {
+      requestId: request.requestId,
+      title: request.title,
+      description: request.description,
+      category: request.category,
+      priority: request.priority,
+      status: request.status,
+      customer: request.customer.username,
+      assignedTechnician: request.assignedTechnician?.username || "Unassigned",
+      createdAt: formatDateTime(request.createdAt),
+      tags: request.tags.join(", "),
+      messages: messages.map((msg) => ({
+        sender: msg.sender.username,
+        content: msg.content,
+        timestamp: formatDateTime(msg.createdAt),
+      })),
+    };
+
+    const dataStr = JSON.stringify(exportData, null, 2);
+    const dataBlob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `support-request-${request.requestId}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const getStatusIcon = (status: string) => {
@@ -245,36 +363,42 @@ export function SupportRequestDetails() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4 max-h-96 overflow-y-auto">
-                {messages.map((message) => (
-                  <div
-                    key={message._id}
-                    className={`flex ${
-                      message.sender._id === user?.id
-                        ? "justify-end"
-                        : "justify-start"
-                    }`}
-                  >
+              <div className="space-y-4 min-h-[200px] max-h-96 overflow-y-auto">
+                {messages.length === 0 ? (
+                  <div className="text-center text-muted-foreground py-8">
+                    No messages yet. Start the conversation!
+                  </div>
+                ) : (
+                  messages.map((message) => (
                     <div
-                      className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                      key={message._id}
+                      className={`flex ${
                         message.sender._id === user?.id
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-muted-foreground"
+                          ? "justify-end"
+                          : "justify-start"
                       }`}
                     >
-                      <div className="flex items-center space-x-2 mb-1">
-                        <User className="h-3 w-3" />
-                        <span className="text-xs font-medium">
-                          {message.sender.username}
-                        </span>
-                        <span className="text-xs opacity-70">
-                          {formatDateTime(message.createdAt)}
-                        </span>
+                      <div
+                        className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                          message.sender._id === user?.id
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        <div className="flex items-center space-x-2 mb-1">
+                          <User className="h-3 w-3" />
+                          <span className="text-xs font-medium">
+                            {message.sender.username}
+                          </span>
+                          <span className="text-xs opacity-70">
+                            {formatDateTime(message.createdAt)}
+                          </span>
+                        </div>
+                        <p className="text-sm">{message.content}</p>
                       </div>
-                      <p className="text-sm">{message.content}</p>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
 
               {/* Send Message Form */}
@@ -354,21 +478,134 @@ export function SupportRequestDetails() {
             <CardHeader>
               <CardTitle>Quick Actions</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-4">
+              {/* Assign to Me - Technician only */}
               {user?.role === "technician" && !request.assignedTechnician && (
-                <Button className="w-full">Assign to Me</Button>
+                <Button className="w-full" onClick={handleAssignToMe}>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Assign to Me
+                </Button>
               )}
+
+              {/* Assign Technician - Admin only */}
               {user?.role === "admin" && (
-                <>
-                  <Button variant="outline" className="w-full">
-                    Assign Technician
+                <div className="space-y-2">
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={handleAssignTechnician}
+                    disabled={assigningTechnician}
+                  >
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    {assigningTechnician ? "Assigning..." : "Assign Technician"}
                   </Button>
-                  <Button variant="outline" className="w-full">
-                    Update Status
-                  </Button>
-                </>
+
+                  {showAssignSection && (
+                    <div className="space-y-2">
+                      <Select
+                        value={selectedTechnician}
+                        onValueChange={setSelectedTechnician}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select technician" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {technicians.map((tech) => (
+                            <SelectItem key={tech._id} value={tech._id}>
+                              {tech.username} - {tech.specialization}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="flex space-x-2">
+                        <Button
+                          size="sm"
+                          onClick={handleAssignTechnician}
+                          disabled={!selectedTechnician || assigningTechnician}
+                        >
+                          Assign
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setShowAssignSection(false);
+                            setSelectedTechnician("");
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
-              <Button variant="outline" className="w-full">
+
+              {/* Update Status - Admin only */}
+              {user?.role === "admin" && (
+                <div className="space-y-2">
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={handleUpdateStatus}
+                    disabled={updatingStatus}
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    {updatingStatus ? "Updating..." : "Update Status"}
+                  </Button>
+
+                  {showStatusSection && (
+                    <div className="space-y-2">
+                      <Select
+                        value={selectedStatus}
+                        onValueChange={setSelectedStatus}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="open">Open</SelectItem>
+                          <SelectItem value="in-progress">
+                            In Progress
+                          </SelectItem>
+                          <SelectItem value="pending-customer">
+                            Pending Customer
+                          </SelectItem>
+                          <SelectItem value="resolved">Resolved</SelectItem>
+                          <SelectItem value="closed">Closed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <div className="flex space-x-2">
+                        <Button
+                          size="sm"
+                          onClick={handleUpdateStatus}
+                          disabled={!selectedStatus || updatingStatus}
+                        >
+                          Update
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setShowStatusSection(false);
+                            setSelectedStatus("");
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Export Details - All roles */}
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleExportDetails}
+              >
+                <Download className="h-4 w-4 mr-2" />
                 Export Details
               </Button>
             </CardContent>

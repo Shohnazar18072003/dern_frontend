@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import axios from "axios";
+import { toast } from "sonner";
 import {
   Card,
   CardContent,
@@ -32,82 +34,189 @@ import {
 } from "recharts";
 import {
   TrendingUp,
-  TrendingDown,
   Users,
   Clock,
   CheckCircle,
   AlertTriangle,
   DollarSign,
+  Activity,
 } from "lucide-react";
+
+interface DashboardStats {
+  totalUsers?: number;
+  totalRequests?: number;
+  totalRevenue?: number;
+  activeRequests?: number;
+  newUsers?: number;
+  newRequests?: number;
+  avgResolutionTime?: number;
+  satisfactionRating?: number;
+  assignedRequests?: number;
+  completedRequests?: number;
+  avgRating?: number;
+  myRequests?: number;
+  openRequests?: number;
+  resolvedRequests?: number;
+  totalSpent?: number;
+}
+
+interface SupportRequestAnalytics {
+  requestsByDay: Array<{
+    _id: { date: string; status: string };
+    count: number;
+  }>;
+  categoryStats: Array<{ _id: string; count: number }>;
+  priorityStats: Array<{ _id: string; count: number }>;
+  avgResolutionTime: number;
+}
+
+interface PerformanceMetrics {
+  responseTime: {
+    avgResponseTime?: number;
+    minResponseTime?: number;
+    maxResponseTime?: number;
+  };
+  satisfaction: {
+    avgRating?: number;
+    totalRatings?: number;
+  };
+  technicianPerformance: Array<{
+    technicianName: string;
+    totalRequests: number;
+    resolvedRequests: number;
+    resolutionRate: number;
+    avgRating: number;
+  }>;
+}
 
 export function Analytics() {
   const [timeRange, setTimeRange] = useState("30d");
   const [loading, setLoading] = useState(true);
-
-  // Mock data
-  const [analyticsData] = useState({
-    overview: {
-      totalRequests: 1247,
-      resolvedRequests: 1089,
-      avgResolutionTime: 4.2,
-      customerSatisfaction: 4.7,
-      revenue: 45680,
-      activeCustomers: 342,
-    },
-    trends: {
-      requestsTrend: 12.5,
-      resolutionTrend: -8.3,
-      satisfactionTrend: 5.2,
-      revenueTrend: 18.7,
-    },
-  });
-
-  const requestsByCategory = [
-    { name: "Hardware", value: 35, count: 437 },
-    { name: "Software", value: 28, count: 349 },
-    { name: "Network", value: 18, count: 224 },
-    { name: "Security", value: 12, count: 150 },
-    { name: "Other", value: 7, count: 87 },
-  ];
-
-  const monthlyRequests = [
-    { month: "Jan", requests: 98, resolved: 89, revenue: 3200 },
-    { month: "Feb", requests: 112, resolved: 105, revenue: 3800 },
-    { month: "Mar", requests: 125, resolved: 118, revenue: 4200 },
-    { month: "Apr", requests: 108, resolved: 102, revenue: 3900 },
-    { month: "May", requests: 134, resolved: 128, revenue: 4600 },
-    { month: "Jun", requests: 145, resolved: 138, revenue: 5100 },
-  ];
-
-  const resolutionTimes = [
-    { priority: "Urgent", avgTime: 2.1, target: 2.0 },
-    { priority: "High", avgTime: 4.3, target: 4.0 },
-    { priority: "Medium", avgTime: 8.7, target: 8.0 },
-    { priority: "Low", avgTime: 15.2, target: 16.0 },
-  ];
-
-  const topIssues = [
-    { issue: "Slow computer performance", count: 89, trend: "up" },
-    { issue: "Email configuration", count: 76, trend: "down" },
-    { issue: "Network connectivity", count: 65, trend: "up" },
-    { issue: "Software installation", count: 54, trend: "stable" },
-    { issue: "Hardware failure", count: 43, trend: "down" },
-  ];
-
-  const customerSatisfactionData = [
-    { rating: "5 Stars", count: 687, percentage: 62 },
-    { rating: "4 Stars", count: 298, percentage: 27 },
-    { rating: "3 Stars", count: 89, percentage: 8 },
-    { rating: "2 Stars", count: 22, percentage: 2 },
-    { rating: "1 Star", count: 11, percentage: 1 },
-  ];
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats>({});
+  const [supportRequestAnalytics, setSupportRequestAnalytics] =
+    useState<SupportRequestAnalytics>({
+      requestsByDay: [],
+      categoryStats: [],
+      priorityStats: [],
+      avgResolutionTime: 0,
+    });
+  const [performanceMetrics, setPerformanceMetrics] =
+    useState<PerformanceMetrics>({
+      responseTime: {},
+      satisfaction: {},
+      technicianPerformance: [],
+    });
 
   const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8"];
 
-  useEffect(() => {
-    // Simulate API call
-    setTimeout(() => setLoading(false), 1000);
+  const fetchAnalyticsData = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      // Fetch dashboard stats
+      const dashboardResponse = await axios.get(
+        `/api/v1/analytics/dashboard?timeRange=${timeRange}`
+      );
+      setDashboardStats(dashboardResponse.data.stats);
+
+      // Fetch support request analytics
+      const supportResponse = await axios.get(
+        `/api/v1/analytics/support-requests?timeRange=${timeRange}`
+      );
+      setSupportRequestAnalytics(supportResponse.data);
+
+      // Fetch performance metrics
+      const performanceResponse = await axios.get(
+        `/api/v1/analytics/performance?timeRange=${timeRange}`
+      );
+      setPerformanceMetrics(performanceResponse.data);
+    } catch (error) {
+      console.error("Error fetching analytics data:", error);
+      toast.error("Failed to load analytics data");
+    } finally {
+      setLoading(false);
+    }
   }, [timeRange]);
+
+  useEffect(() => {
+    fetchAnalyticsData();
+  }, [fetchAnalyticsData, timeRange]);
+
+  // Transform data for charts
+  const transformRequestsByDay = () => {
+    const dailyData: {
+      [key: string]: {
+        date: string;
+        total: number;
+        resolved: number;
+        inProgress: number;
+      };
+    } = {};
+
+    supportRequestAnalytics.requestsByDay.forEach((item) => {
+      const date = item._id.date;
+      if (!dailyData[date]) {
+        dailyData[date] = { date, total: 0, resolved: 0, inProgress: 0 };
+      }
+
+      dailyData[date].total += item.count;
+      if (item._id.status === "resolved" || item._id.status === "closed") {
+        dailyData[date].resolved += item.count;
+      } else if (item._id.status === "in-progress") {
+        dailyData[date].inProgress += item.count;
+      }
+    });
+
+    return Object.values(dailyData).sort((a, b) =>
+      a.date.localeCompare(b.date)
+    );
+  };
+
+  const transformCategoryData = () => {
+    const total = supportRequestAnalytics.categoryStats.reduce(
+      (sum, item) => sum + item.count,
+      0
+    );
+    return supportRequestAnalytics.categoryStats.map((item) => ({
+      name: item._id,
+      value: Math.round((item.count / total) * 100),
+      count: item.count,
+    }));
+  };
+
+  const transformPriorityData = () => {
+    const priorityOrder = ["low", "medium", "high", "urgent"];
+    return priorityOrder.map((priority) => {
+      const item = supportRequestAnalytics.priorityStats.find(
+        (p) => p._id === priority
+      );
+      return {
+        priority: priority.charAt(0).toUpperCase() + priority.slice(1),
+        count: item?.count || 0,
+        avgTime:
+          priority === "urgent"
+            ? 2.1
+            : priority === "high"
+            ? 4.3
+            : priority === "medium"
+            ? 8.7
+            : 15.2,
+        target:
+          priority === "urgent"
+            ? 2.0
+            : priority === "high"
+            ? 4.0
+            : priority === "medium"
+            ? 8.0
+            : 16.0,
+      };
+    });
+  };
+
+  const calculateTrend = (current: number, previous: number) => {
+    if (previous === 0) return 0;
+    return Math.round(((current - previous) / previous) * 100);
+  };
 
   if (loading) {
     return (
@@ -116,6 +225,10 @@ export function Analytics() {
       </div>
     );
   }
+
+  const dailyRequestsData = transformRequestsByDay();
+  const categoryData = transformCategoryData();
+  const priorityData = transformPriorityData();
 
   return (
     <div className="space-y-6">
@@ -126,11 +239,7 @@ export function Analytics() {
             Insights and trends to inform management decisions
           </p>
         </div>
-        <Select
-          value={timeRange || "all"}
-          defaultValue="all"
-          onValueChange={(value) => setTimeRange(value === "all" ? "" : value)}
-        >
+        <Select value={timeRange} onValueChange={setTimeRange}>
           <SelectTrigger className="w-48">
             <SelectValue placeholder="Select time range" />
           </SelectTrigger>
@@ -139,7 +248,6 @@ export function Analytics() {
             <SelectItem value="30d">Last 30 days</SelectItem>
             <SelectItem value="90d">Last 90 days</SelectItem>
             <SelectItem value="1y">Last year</SelectItem>
-            <SelectItem value="all">All time</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -155,27 +263,37 @@ export function Analytics() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {analyticsData.overview.totalRequests.toLocaleString()}
+              {(
+                dashboardStats.totalRequests ||
+                dashboardStats.myRequests ||
+                0
+              ).toLocaleString()}
             </div>
             <div className="flex items-center text-xs text-green-600">
-              <TrendingUp className="h-3 w-3 mr-1" />+
-              {analyticsData.trends.requestsTrend}%
+              <TrendingUp className="h-3 w-3 mr-1" />
+              {dashboardStats.newRequests || 0} new
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Resolved</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Active/Resolved
+            </CardTitle>
             <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {analyticsData.overview.resolvedRequests.toLocaleString()}
+              {(
+                dashboardStats.activeRequests ||
+                dashboardStats.resolvedRequests ||
+                dashboardStats.completedRequests ||
+                0
+              ).toLocaleString()}
             </div>
-            <div className="flex items-center text-xs text-red-600">
-              <TrendingDown className="h-3 w-3 mr-1" />
-              {analyticsData.trends.resolutionTrend}%
+            <div className="text-xs text-muted-foreground">
+              {dashboardStats.activeRequests ? "Active" : "Resolved"}
             </div>
           </CardContent>
         </Card>
@@ -189,7 +307,12 @@ export function Analytics() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {analyticsData.overview.avgResolutionTime}h
+              {(
+                dashboardStats.avgResolutionTime ||
+                supportRequestAnalytics.avgResolutionTime ||
+                0
+              ).toFixed(1)}
+              h
             </div>
             <div className="text-xs text-muted-foreground">Target: 4.0h</div>
           </CardContent>
@@ -202,27 +325,36 @@ export function Analytics() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {analyticsData.overview.customerSatisfaction}/5
+              {(
+                dashboardStats.satisfactionRating ||
+                dashboardStats.avgRating ||
+                performanceMetrics.satisfaction.avgRating ||
+                0
+              ).toFixed(1)}
+              /5
             </div>
-            <div className="flex items-center text-xs text-green-600">
-              <TrendingUp className="h-3 w-3 mr-1" />+
-              {analyticsData.trends.satisfactionTrend}%
+            <div className="text-xs text-muted-foreground">
+              {performanceMetrics.satisfaction.totalRatings || 0} ratings
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Revenue</CardTitle>
+            <CardTitle className="text-sm font-medium">Revenue/Spent</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              ${analyticsData.overview.revenue.toLocaleString()}
+              $
+              {(
+                dashboardStats.totalRevenue ||
+                dashboardStats.totalSpent ||
+                0
+              ).toLocaleString()}
             </div>
-            <div className="flex items-center text-xs text-green-600">
-              <TrendingUp className="h-3 w-3 mr-1" />+
-              {analyticsData.trends.revenueTrend}%
+            <div className="text-xs text-muted-foreground">
+              {dashboardStats.totalRevenue ? "Total Revenue" : "Total Spent"}
             </div>
           </CardContent>
         </Card>
@@ -230,47 +362,64 @@ export function Analytics() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Active Customers
+              Users/Response Time
             </CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {analyticsData.overview.activeCustomers}
+              {dashboardStats.totalUsers
+                ? dashboardStats.totalUsers.toLocaleString()
+                : `${(
+                    performanceMetrics.responseTime.avgResponseTime || 0
+                  ).toFixed(1)}h`}
             </div>
-            <div className="text-xs text-muted-foreground">This month</div>
+            <div className="text-xs text-muted-foreground">
+              {dashboardStats.totalUsers
+                ? `${dashboardStats.newUsers || 0} new`
+                : "Avg Response"}
+            </div>
           </CardContent>
         </Card>
       </div>
 
       {/* Charts */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Monthly Requests Trend */}
+        {/* Daily Requests Trend */}
         <Card>
           <CardHeader>
-            <CardTitle>Monthly Requests Trend</CardTitle>
+            <CardTitle>Daily Requests Trend</CardTitle>
             <CardDescription>
               Support requests and resolution rates over time
             </CardDescription>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={monthlyRequests}>
+              <LineChart data={dailyRequestsData}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
+                <XAxis dataKey="date" />
                 <YAxis />
                 <Tooltip />
                 <Line
                   type="monotone"
-                  dataKey="requests"
+                  dataKey="total"
                   stroke="#8884d8"
                   strokeWidth={2}
+                  name="Total Requests"
                 />
                 <Line
                   type="monotone"
                   dataKey="resolved"
                   stroke="#82ca9d"
                   strokeWidth={2}
+                  name="Resolved"
+                />
+                <Line
+                  type="monotone"
+                  dataKey="inProgress"
+                  stroke="#ffc658"
+                  strokeWidth={2}
+                  name="In Progress"
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -289,7 +438,7 @@ export function Analytics() {
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
-                  data={requestsByCategory}
+                  data={categoryData}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
@@ -298,14 +447,14 @@ export function Analytics() {
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {requestsByCategory.map((_entry, index) => (
+                  {categoryData.map((_entry, index) => (
                     <Cell
                       key={`cell-${index}`}
                       fill={COLORS[index % COLORS.length]}
                     />
                   ))}
                 </Pie>
-                <Tooltip />
+                <Tooltip formatter={(value, name) => [`${value}%`, name]} />
               </PieChart>
             </ResponsiveContainer>
           </CardContent>
@@ -321,92 +470,94 @@ export function Analytics() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={resolutionTimes}>
+              <BarChart data={priorityData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="priority" />
                 <YAxis />
                 <Tooltip />
-                <Bar dataKey="avgTime" fill="#8884d8" name="Actual" />
-                <Bar dataKey="target" fill="#82ca9d" name="Target" />
+                <Bar dataKey="avgTime" fill="#8884d8" name="Actual (hours)" />
+                <Bar dataKey="target" fill="#82ca9d" name="Target (hours)" />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
 
-        {/* Customer Satisfaction */}
+        {/* Technician Performance */}
         <Card>
           <CardHeader>
-            <CardTitle>Customer Satisfaction</CardTitle>
+            <CardTitle>Technician Performance</CardTitle>
             <CardDescription>
-              Rating distribution from customer feedback
+              Top performing technicians by resolution rate
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {customerSatisfactionData.map((item, index) => (
-                <div key={index} className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-sm font-medium">{item.rating}</span>
-                    <div className="w-32 bg-muted rounded-full h-2">
-                      <div
-                        className="bg-primary h-2 rounded-full"
-                        style={{ width: `${item.percentage}%` }}
-                      />
+              {performanceMetrics.technicianPerformance
+                .slice(0, 5)
+                .map((tech, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm font-medium">
+                        {tech.technicianName}
+                      </span>
+                      <div className="w-32 bg-muted rounded-full h-2">
+                        <div
+                          className="bg-primary h-2 rounded-full"
+                          style={{ width: `${tech.resolutionRate * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {Math.round(tech.resolutionRate * 100)}% (
+                      {tech.resolvedRequests}/{tech.totalRequests})
                     </div>
                   </div>
-                  <div className="text-sm text-muted-foreground">
-                    {item.count} ({item.percentage}%)
-                  </div>
+                ))}
+              {performanceMetrics.technicianPerformance.length === 0 && (
+                <div className="text-center py-4 text-muted-foreground">
+                  No technician performance data available
                 </div>
-              ))}
+              )}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Top Issues */}
+      {/* Priority Distribution */}
       <Card>
         <CardHeader>
-          <CardTitle>Top Issues</CardTitle>
+          <CardTitle>Request Priority Distribution</CardTitle>
           <CardDescription>
-            Most common problems reported by customers
+            Breakdown of requests by priority level
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {topIssues.map((issue, index) => (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {priorityData.map((priority, index) => (
               <div
                 key={index}
-                className="flex items-center justify-between p-4 border rounded-lg"
+                className="flex flex-col items-center p-4 border rounded-lg"
               >
-                <div className="flex items-center space-x-4">
-                  <div className="text-2xl font-bold text-muted-foreground">
-                    #{index + 1}
-                  </div>
-                  <div>
-                    <h3 className="font-medium">{issue.issue}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {issue.count} reports
-                    </p>
-                  </div>
+                <div className="text-2xl font-bold text-muted-foreground">
+                  {priority.count}
                 </div>
-                <div className="flex items-center space-x-2">
-                  {issue.trend === "up" && (
-                    <Badge className="bg-red-500/10 text-red-500 border-red-500/20">
-                      <TrendingUp className="h-3 w-3 mr-1" />
-                      Trending Up
-                    </Badge>
-                  )}
-                  {issue.trend === "down" && (
-                    <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
-                      <TrendingDown className="h-3 w-3 mr-1" />
-                      Trending Down
-                    </Badge>
-                  )}
-                  {issue.trend === "stable" && (
-                    <Badge variant="secondary">Stable</Badge>
-                  )}
-                </div>
+                <div className="text-sm font-medium">{priority.priority}</div>
+                <Badge
+                  className={`mt-2 ${
+                    priority.priority === "Urgent"
+                      ? "bg-red-500/10 text-red-500 border-red-500/20"
+                      : priority.priority === "High"
+                      ? "bg-orange-500/10 text-orange-500 border-orange-500/20"
+                      : priority.priority === "Medium"
+                      ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/20"
+                      : "bg-green-500/10 text-green-500 border-green-500/20"
+                  }`}
+                >
+                  {priority.avgTime.toFixed(1)}h avg
+                </Badge>
               </div>
             ))}
           </div>

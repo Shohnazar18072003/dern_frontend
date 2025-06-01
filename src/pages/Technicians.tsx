@@ -146,7 +146,9 @@ export function Technicians() {
               <Select
                 value={availabilityFilter || "all"}
                 defaultValue="all"
-                onValueChange={(value) => setAvailabilityFilter(value === "all" ? "" : value)}
+                onValueChange={(value) =>
+                  setAvailabilityFilter(value === "all" ? "" : value)
+                }
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select Availability" />
@@ -183,7 +185,7 @@ export function Technicians() {
         ) : (
           technicians.map((technician) => (
             <Card
-              key={technician.id}
+              key={technician._id}
               className="hover:shadow-md transition-shadow"
             >
               <CardHeader>
@@ -211,8 +213,8 @@ export function Technicians() {
                   </Badge>
                 </div>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
+              <CardContent className="h-full">
+                <div className="space-y-4 flex flex-col h-full items-between">
                   {/* Rating */}
                   <div className="flex items-center space-x-2">
                     <div className="flex items-center space-x-1">
@@ -257,46 +259,50 @@ export function Technicians() {
                       Specializations:
                     </span>
                     <div className="flex flex-wrap gap-1 mt-1">
-                      {technician.specialization
+                      {(technician.specialization ?? [])
                         .slice(0, 3)
                         .map((spec, index) => (
                           <Badge
-                            key={index}
+                            key={`spec-${technician._id}-${index}-${spec}`}
                             variant="secondary"
                             className="text-xs"
                           >
                             {spec}
                           </Badge>
                         ))}
-                      {technician.specialization.length > 3 && (
-                        <Badge variant="secondary" className="text-xs">
-                          +{technician.specialization.length - 3} more
+                      {(technician.specialization?.length ?? 0) > 3 && (
+                        <Badge
+                          key={`spec-more-${technician._id}-${technician.specialization.length}`}
+                          variant="secondary"
+                          className="text-xs"
+                        >
+                          +{(technician.specialization.length ?? 0) - 3} more
                         </Badge>
                       )}
                     </div>
                   </div>
 
                   {/* Certifications */}
-                  {technician.certifications.length > 0 && (
+                  {(technician.certifications?.length ?? 0) > 0 && (
                     <div>
                       <span className="text-sm text-muted-foreground">
                         Certifications:
                       </span>
                       <div className="flex flex-wrap gap-1 mt-1">
-                        {technician.certifications
+                        {(technician.certifications ?? [])
                           .slice(0, 2)
                           .map((cert, index) => (
                             <Badge
-                              key={index}
+                              key={`cert-${technician._id}-${index}-${cert}`}
                               variant="outline"
                               className="text-xs"
                             >
                               {cert}
                             </Badge>
                           ))}
-                        {technician.certifications.length > 2 && (
-                          <Badge variant="outline" className="text-xs">
-                            +{technician.certifications.length - 2} more
+                        {(technician.certifications?.length ?? 0) > 2 && (
+                          <Badge key={`cert-more-${technician._id}-${technician.certifications.length}`} variant="outline" className="text-xs">
+                            +{(technician.certifications.length ?? 0) - 2} more
                           </Badge>
                         )}
                       </div>
@@ -304,9 +310,9 @@ export function Technicians() {
                   )}
 
                   {/* Actions */}
-                  <div className="flex space-x-2 pt-2">
+                  <div className="flex space-x-2 pt-2 mt-auto">
                     <Link
-                      to={`/technicians/${technician.id}`}
+                      to={`/technicians/${technician._id}`}
                       className="flex-1"
                     >
                       <Button variant="outline" size="sm" className="w-full">
@@ -314,7 +320,7 @@ export function Technicians() {
                       </Button>
                     </Link>
                     <Link
-                      to={`/appointments/new?technician=${technician.id}`}
+                      to={`/app/appointments/new?technician=${technician._id}`}
                       className="flex-1"
                     >
                       <Button

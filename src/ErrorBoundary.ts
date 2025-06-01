@@ -1,35 +1,38 @@
 import { Component, type ReactNode, createElement } from "react";
 
 interface ErrorBoundaryProps {
-  children?: ReactNode;
+    children?: ReactNode;
 }
 
 interface ErrorBoundaryState {
-  hasError: boolean;
+    hasError: boolean;
+    error: Error | null;
 }
 
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false };
-  }
-
-  static getDerivedStateFromError(error: any) {
-    // Update state so the next render will show the fallback UI
-    return { hasError: true };
-  }
-
-  componentDidCatch(error: any, errorInfo: any) {
-    // You can also log the error to an error reporting service
-    console.error("ErrorBoundary caught an error:", error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      // You can render any custom fallback UI
-      return createElement('h1', null, 'Something went wrong.');
+    constructor(props: ErrorBoundaryProps) {
+        super(props);
+        this.state = { hasError: false, error: null };
     }
 
-    return this.props.children; 
-  }
+    static getDerivedStateFromError(error: Error) {
+        return { hasError: true, error };
+    }
+
+    componentDidCatch(error: Error, errorInfo: any) {
+        console.error("ErrorBoundary caught an error:", error, errorInfo);
+    }
+
+    render() {
+        if (this.state.hasError) {
+            return createElement(
+                "div",
+                { style: { color: "red" } },
+                createElement("h1", null, "Something went wrong."),
+                this.state.error && createElement("pre", null, String(this.state.error.message))
+            );
+        }
+
+        return this.props.children;
+    }
 }

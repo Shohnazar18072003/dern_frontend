@@ -89,7 +89,30 @@ export function Login() {
             </Button>
           </form>
 
+          <Card className="mt-4 py-2">
+            <CardContent>
+              <p className="text-xs text-muted-foreground text-center font-mono leading-tight">
+                Admin: admin@dern.com <br />
+                Technician: technician@dern.com <br />
+                Business: business@dern.com <br />
+                Individual: individual@dern.com <br />
+                Password: 1234567890
+              </p>
+            </CardContent>
+          </Card>
+
           <div className="mt-6 text-center space-y-2">
+            <p className="text-sm text-muted-foreground m-0">
+              You are agreeing to our{" "}
+              <Link to="/terms" className="text-primary hover:underline">
+                Terms of Service
+              </Link>{" "}
+              and{" "}
+              <Link to="/privacy" className="text-primary hover:underline">
+                Privacy Policy
+              </Link>
+              .
+            </p>
             <Link
               to="/forgot-password"
               className="text-sm text-muted-foreground hover:text-primary"

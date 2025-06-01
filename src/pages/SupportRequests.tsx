@@ -120,7 +120,7 @@ export function SupportRequests() {
           </p>
         </div>
         {user?.role === "customer" && (
-          <Link to="/support-requests/new">
+          <Link to="/app/support-requests/new">
             <Button>
               <Plus className="h-4 w-4 mr-2" />
               New Request
@@ -253,7 +253,7 @@ export function SupportRequests() {
                     : "No requests match your current filters."}
                 </p>
                 {user?.role === "customer" && (
-                  <Link to="/support-requests/new">
+                  <Link to="/app/support-requests/new">
                     <Button>
                       <Plus className="h-4 w-4 mr-2" />
                       Create Request
@@ -274,7 +274,7 @@ export function SupportRequests() {
                   <div className="flex-1">
                     <div className="flex items-center space-x-2 mb-2">
                       <Link
-                        to={`/support-requests/${request.requestId}`}
+                        to={`/app/support-requests/${request.requestId}`}
                         className="text-lg font-semibold hover:text-primary transition-colors"
                       >
                         {request.title}

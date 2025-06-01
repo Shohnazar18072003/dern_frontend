@@ -63,16 +63,22 @@ export function Layout() {
     if (user?.role === "technician") {
       return [
         ...baseItems,
-        { name: "Technician Dashboard", href: "/app/technician", icon: Wrench },
         {
-          name: "Available Requests",
-          href: "/app/technician/available",
-          icon: Ticket,
-        },
-        {
-          name: "My Requests",
-          href: "/app/technician/requests",
-          icon: ClipboardList,
+          name: "Technician Dashboard",
+          href: "/app/technician",
+          icon: Wrench,
+          children: [
+            {
+              name: "Available Requests",
+              href: "/app/technician/available",
+              icon: Ticket,
+            },
+            {
+              name: "My Requests",
+              href: "/app/technician/requests",
+              icon: ClipboardList,
+            },
+          ],
         },
         {
           name: "Job Scheduling",
