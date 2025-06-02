@@ -9,7 +9,7 @@ dotenv.config();
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  base: "/dern-frontend/",
+  base: "/dern_frontend/",
   build: {
     chunkSizeWarningLimit: 1500,
     outDir: "build", // This is the default; ensure it’s not set to something else

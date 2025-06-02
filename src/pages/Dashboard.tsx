@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Link } from "react-router-dom";
 import type { DashboardStats } from "@/types";
 import api from "@/lib/api";
 import {
@@ -194,8 +195,8 @@ export function Dashboard() {
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {user?.role === "customer" && (
               <>
-                <a
-                  href="/app/support-requests/new"
+                <Link
+                  to="/app/support-requests/new"
                   className="flex items-center p-4 border rounded-lg hover:bg-accent transition-colors"
                 >
                   <Ticket className="h-8 w-8 mr-3 text-primary" />
@@ -205,9 +206,9 @@ export function Dashboard() {
                       Get help with your issue
                     </p>
                   </div>
-                </a>
-                <a
-                  href="/app/technicians"
+                </Link>
+                <Link
+                  to="/app/technicians"
                   className="flex items-center p-4 border rounded-lg hover:bg-accent transition-colors"
                 >
                   <Users className="h-8 w-8 mr-3 text-primary" />
@@ -217,14 +218,14 @@ export function Dashboard() {
                       Browse available experts
                     </p>
                   </div>
-                </a>
+                </Link>
               </>
             )}
 
             {user?.role === "technician" && (
               <>
-                <a
-                  href="/technician/available"
+                <Link
+                  to="/technician/available"
                   className="flex items-center p-4 border rounded-lg hover:bg-accent transition-colors"
                 >
                   <Ticket className="h-8 w-8 mr-3 text-primary" />
@@ -234,9 +235,9 @@ export function Dashboard() {
                       Pick up new work
                     </p>
                   </div>
-                </a>
-                <a
-                  href="/technician/requests"
+                </Link>
+                <Link
+                  to="/technician/requests"
                   className="flex items-center p-4 border rounded-lg hover:bg-accent transition-colors"
                 >
                   <Wrench className="h-8 w-8 mr-3 text-primary" />
@@ -246,14 +247,14 @@ export function Dashboard() {
                       Manage assigned work
                     </p>
                   </div>
-                </a>
+                </Link>
               </>
             )}
 
             {user?.role === "admin" && (
               <>
-                <a
-                  href="/app/admin/users"
+                <Link
+                  to="/app/admin/users"
                   className="flex items-center p-4 border rounded-lg hover:bg-accent transition-colors"
                 >
                   <Users className="h-8 w-8 mr-3 text-primary" />
@@ -263,9 +264,9 @@ export function Dashboard() {
                       User administration
                     </p>
                   </div>
-                </a>
-                <a
-                  href="/app/admin/services"
+                </Link>
+                <Link
+                  to="/app/admin/services"
                   className="flex items-center p-4 border rounded-lg hover:bg-accent transition-colors"
                 >
                   <Wrench className="h-8 w-8 mr-3 text-primary" />
@@ -275,7 +276,7 @@ export function Dashboard() {
                       Service configuration
                     </p>
                   </div>
-                </a>
+                </Link>
               </>
             )}
           </div>
